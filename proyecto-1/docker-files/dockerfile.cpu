@@ -1,0 +1,8 @@
+# Desde la imagen base de Alpine Linux
+FROM alpine:latest
+
+# Instalamos stress-ng
+RUN apk add --no-cache stress-ng
+
+# Ejecutamos stress-ng con un trabajador de CPU al 25% de carga y sin límite de tiempo
+CMD ["stress-ng", "--cpu", "1", "--cpu-load", "50", "--timeout", "0"]

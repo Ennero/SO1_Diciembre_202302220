@@ -1,0 +1,8 @@
+# Desde la imagen base de Alpine Linux
+FROM alpine:latest
+
+# Instalamos stress-ng
+RUN apk add --no-cache stress-ng
+
+# Ejecutamos stress-ng con un trabajador, 128MB de memoria ocupada y sin límite de tiempo
+CMD ["stress-ng", "--vm", "1", "--vm-bytes", "128M", "--timeout", "0"]

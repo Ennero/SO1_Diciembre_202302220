@@ -1,0 +1,5 @@
+# Desde la imagen base de Alpine Linux
+FROM alpine:latest
+
+# Solo existe xd
+CMD ["sleep", "infinity"]
