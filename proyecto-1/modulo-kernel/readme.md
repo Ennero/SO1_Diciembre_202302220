@@ -1,34 +1,43 @@
-# Modulo de Kernel
+# Módulo de Kernel
 
-## Creación de Módulo
-Para poder crear este módulo, primero es necesario descargar el compilador gcc y sus herramientas escenciales:
+Expone métricas de procesos en `/proc/continfo_so1_202302220` en formato JSON.
+
+## Requisitos
 
 ```bash
 sudo apt update
-sudo apt install build-essential
+sudo apt install -y build-essential linux-headers-$(uname -r)
 ```
 
-Además es recomendable asegurarse de tener el encabezado del kernel instalado:
+## Compilación
 
 ```bash
-sudo apt-get update
-sudo apt-get install build-essential linux-headers-$(uname -r)
+make clean && make
 ```
 
-Ya con esto, ingresando el siguiente comando:
+Genera `module.ko` usando el `Makefile` (objetivo `obj-m += module.o`).
 
-```bash
-make
-```
+Archivos principales:
 
-Se crearía el módulo.
+- `module.c` — lógica del procfs (JSON) — [ver archivo](./module.c)
+- `Makefile` — reglas de compilación — [ver archivo](./Makefile)
 
-
-
-## Probar módulo
-
-Para esto se usa el siguiente comando:
+## Carga y verificación
 
 ```bash
 sudo insmod module.ko
+cat /proc/continfo_so1_202302220
 ```
+
+Salida esperada: arreglo JSON con `pid`, `name`, `state`, `ram_kb`, `vsz_kb`, `cpu_utime`, `cpu_stime`.
+
+## Descarga
+
+```bash
+sudo rmmod module
+```
+
+## Notas
+
+- La entrada `/proc` es de solo lectura (0444).
+- Si `insmod` falla, revise `dmesg | tail -n 50`.

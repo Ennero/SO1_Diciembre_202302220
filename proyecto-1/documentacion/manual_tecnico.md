@@ -2,6 +2,26 @@
 
 Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un daemon en Go para recolectar métricas, cruzarlas con Docker y gestionar el ciclo de vida de procesos/containers de alto o bajo consumo.
 
+## Índice
+
+- [1. Arquitectura del Sistema](#1-arquitectura-del-sistema)
+- [2. Módulo de Kernel (C)](#2-módulo-de-kernel-c)
+	- [2.1. Funciones principales](#21-funciones-principales)
+	- [2.2. Métricas expuestas](#22-métricas-expuestas)
+- [3. Daemon (Go)](#3-daemon-go)
+	- [3.1. Cálculo de %CPU](#31-cálculo-de-cpu)
+	- [3.2. Política de control (Thanos)](#32-política-de-control-thanos)
+- [4. Automatización (Bash)](#4-automatización-bash)
+- [5. Decisiones de Diseño y Problemas Encontrados](#5-decisiones-de-diseño-y-problemas-encontrados)
+- [6. Instalación y Ejecución](#6-instalación-y-ejecución)
+	- [6.1. Requisitos Previos](#61-requisitos-previos)
+	- [6.2. Construcción de Imágenes Docker](#62-construcción-de-imágenes-docker)
+	- [6.3. Compilación y Carga del Módulo](#63-compilación-y-carga-del-módulo)
+	- [6.4. Generación de Tráfico](#64-generación-de-tráfico)
+	- [6.5. Iniciar el Monitor (Daemon)](#65-iniciar-el-monitor-daemon)
+- [7. Notas de Seguridad y Mantenimiento](#7-notas-de-seguridad-y-mantenimiento)
+- [8. Referencias Rápidas](#8-referencias-rápidas)
+
 ## 1. Arquitectura del Sistema
 
 - **Espacio de Kernel (C):** Módulo que recorre procesos (`task_struct`) y expone métricas en un archivo virtual en `/proc` en formato JSON.
@@ -9,8 +29,8 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 
 ## 2. Módulo de Kernel (C)
 
-- **Ubicación:** `proyecto-1/modulo-kernel`
-- **Archivo principal:** `module.c`
+- **Ubicación:** `proyecto-1/modulo-kernel` — [abrir carpeta](../modulo-kernel/)
+- **Archivo principal:** `module.c` — [ver archivo](../modulo-kernel/module.c)
 - **Procfs expuesto:** `/proc/continfo_so1_202302220`
 - **Dependencias (headers):** `<linux/module.h>`, `<linux/sched.h>`, `<linux/mm.h>`, `<linux/seq_file.h>`, `<linux/sched/signal.h>`
 
@@ -42,7 +62,7 @@ Cada entrada del arreglo JSON tiene la forma:
 
 ## 3. Daemon (Go)
 
-- **Ubicación:** `proyecto-1/go-daemon/main.go`
+- **Ubicación:** `proyecto-1/go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 - **Frecuencia:** Ticker cada 5 segundos.
 - **Tareas por ciclo:**
 	- Obtener contenedores con `docker ps` (`exec.Command`).
@@ -67,7 +87,7 @@ $$
 
 ## 4. Automatización (Bash)
 
-- **Ubicación:** `proyecto-1/bash/generator.sh`
+- **Ubicación:** `proyecto-1/bash/generator.sh` — [ver archivo](../bash/generator.sh)
 - **Función:** Estresar el sistema para pruebas creando 10 contenedores aleatorios basados en las imágenes `so1_ram`, `so1_cpu`, `so1_low`. Nombres únicos para facilitar rastreo.
 
 ## 5. Decisiones de Diseño y Problemas Encontrados
@@ -106,6 +126,12 @@ docker build -t so1_cpu -f docker-files/dockerfile.cpu .
 docker build -t so1_low -f docker-files/dockerfile.low .
 ```
 
+Archivos Dockerfiles:
+
+- `docker-files/dockerfile.ram` — [ver archivo](../docker-files/dockerfile.ram)
+- `docker-files/dockerfile.cpu` — [ver archivo](../docker-files/dockerfile.cpu)
+- `docker-files/dockerfile.low` — [ver archivo](../docker-files/dockerfile.low)
+
 ### 6.3. Compilación y Carga del Módulo
 
 ```bash
@@ -119,6 +145,11 @@ cat /proc/continfo_so1_202302220
 
 Debería ver un arreglo JSON con procesos y métricas.
 
+Archivos relacionados:
+
+- `modulo-kernel/Makefile` — [ver archivo](../modulo-kernel/Makefile)
+- `modulo-kernel/module.c` — [ver archivo](../modulo-kernel/module.c)
+
 ### 6.4. Generación de Tráfico
 
 ```bash
@@ -127,12 +158,16 @@ chmod +x generator.sh
 ./generator.sh
 ```
 
+Archivo relacionado: `bash/generator.sh` — [ver archivo](../bash/generator.sh)
+
 ### 6.5. Iniciar el Monitor (Daemon)
 
 ```bash
 cd ../go-daemon
 sudo env "PATH=$PATH" go run main.go
 ```
+
+Archivo relacionado: `go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 
 **Resultado esperado:** Cada 5 segundos se listan contenedores detectados, RAM, `%CPU` calculado y, en caso de exceso, mensajes de eliminación de procesos sobrantes.
 
@@ -152,7 +187,7 @@ sudo env "PATH=$PATH" go run main.go
 
 ## 8. Referencias Rápidas
 
-- `modulo-kernel/Makefile`: genera `module.ko` con `obj-m += module.o`.
-- `go-daemon/main.go`: constantes `DESIRED_HIGH`, `DESIRED_LOW` y `PROC_FILE`.
-- `bash/generator.sh`: crea 10 contenedores a partir de `so1_ram|so1_cpu|so1_low`.
-- `docker-files/`: `dockerfile.ram`, `dockerfile.cpu`, `dockerfile.low`.
+- `modulo-kernel/Makefile`: genera `module.ko` con `obj-m += module.o`. — [ver archivo](../modulo-kernel/Makefile)
+- `go-daemon/main.go`: constantes `DESIRED_HIGH`, `DESIRED_LOW` y `PROC_FILE`. — [ver archivo](../go-daemon/main.go)
+- `bash/generator.sh`: crea 10 contenedores a partir de `so1_ram|so1_cpu|so1_low`. — [ver archivo](../bash/generator.sh)
+- `docker-files/`: `dockerfile.ram`, `dockerfile.cpu`, `dockerfile.low`. — [abrir carpeta](../docker-files/)

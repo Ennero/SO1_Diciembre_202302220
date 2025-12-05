@@ -2,6 +2,18 @@
 
 Guía rápida para construir imágenes, cargar el módulo de kernel, generar carga con contenedores y ejecutar el daemon de monitoreo.
 
+## Índice
+
+- [Requisitos Previos](#requisitos-previos)
+- [Instalación y Ejecución](#instalación-y-ejecución)
+	- [1) Construir imágenes de Docker](#1-construir-imágenes-de-docker)
+	- [2) Compilar y cargar el módulo del Kernel](#2-compilar-y-cargar-el-módulo-del-kernel)
+	- [3) Generar tráfico (contenedores de prueba)](#3-generar-tráfico-contenedores-de-prueba)
+	- [4) Iniciar el monitor (Daemon en Go)](#4-iniciar-el-monitor-daemon-en-go)
+- [Solución de Problemas](#solución-de-problemas)
+- [Limpieza](#limpieza)
+- [Próximo Paso (opcional)](#próximo-paso-opcional)
+
 ## Requisitos Previos
 
 - Sistema operativo: Linux (Ubuntu 22.04+ recomendado)
@@ -22,6 +34,12 @@ docker build -t so1_cpu -f docker-files/dockerfile.cpu .
 docker build -t so1_low -f docker-files/dockerfile.low .
 ```
 
+Archivos Dockerfiles:
+
+- `docker-files/dockerfile.ram` — [ver archivo](../docker-files/dockerfile.ram)
+- `docker-files/dockerfile.cpu` — [ver archivo](../docker-files/dockerfile.cpu)
+- `docker-files/dockerfile.low` — [ver archivo](../docker-files/dockerfile.low)
+
 ### 2 Compilar y cargar el módulo del Kernel
 
 ```bash
@@ -35,6 +53,11 @@ cat /proc/continfo_so1_202302220
 
 Debería mostrarse un arreglo JSON con la lista de procesos y métricas.
 
+Archivos relacionados:
+
+- `modulo-kernel/Makefile` — [ver archivo](../modulo-kernel/Makefile)
+- `modulo-kernel/module.c` — [ver archivo](../modulo-kernel/module.c)
+
 ### 3 Generar tráfico (contenedores de prueba)
 
 ```bash
@@ -43,12 +66,16 @@ chmod +x generator.sh
 ./generator.sh
 ```
 
+Archivo relacionado: `bash/generator.sh` — [ver archivo](../bash/generator.sh)
+
 ### 4 Iniciar el monitor (Daemon en Go)
 
 ```bash
 cd ../go-daemon
 sudo env "PATH=$PATH" go run main.go
 ```
+
+Archivo relacionado: `go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 
 Resultado esperado: Actualizaciones cada 5 segundos con contenedores detectados, consumo de RAM, %CPU, y mensajes si se eliminan procesos/containers sobrantes.
 
