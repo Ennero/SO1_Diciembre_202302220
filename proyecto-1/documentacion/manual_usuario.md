@@ -26,6 +26,16 @@ Guía práctica y amigable para construir imágenes, cargar los módulos de kern
 - Encabezados del kernel instalados: `sudo apt install linux-headers-$(uname -r)`
 - Permisos para usar Docker: ejecutar con `sudo` o agregar su usuario al grupo `docker` y reiniciar sesión: `sudo usermod -aG docker $USER`
 
+Iniciar el servicio de Docker (si no está activo)
+
+```bash
+# Arrancar el servicio Docker
+sudo systemctl start docker
+
+# Verificar estado (debe indicar "Active: active (running)")
+sudo systemctl status docker
+```
+
 ## Instalación y Ejecución
 
 ### 1 Construir imágenes de Docker

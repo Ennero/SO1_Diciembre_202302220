@@ -119,15 +119,27 @@ Nota: `HZ` puede variar según la distro (p. ej., 100, 250, 1000). Para mayor pr
 - **Go:** v1.20+
 - **Herramientas:** GCC y Make
 
+Iniciar y verificar el servicio Docker
+
+```bash
+# Iniciar el servicio Docker
+sudo systemctl start docker
+
+# Verificar estado (debe decir "Active: active (running)")
+sudo systemctl status docker
+```
+
 ### 6.2. Construcción de Imágenes Docker
+
+
 
 Ejecute desde la raíz del repo o entrando a `proyecto-1`:
 
 ```bash
 cd proyecto-1
-docker build -t so1_ram -f docker-files/dockerfile.ram .
-docker build -t so1_cpu -f docker-files/dockerfile.cpu .
-docker build -t so1_low -f docker-files/dockerfile.low .
+sudo docker build -t so1_ram -f docker-files/dockerfile.ram .
+sudo docker build -t so1_cpu -f docker-files/dockerfile.cpu .
+sudo docker build -t so1_low -f docker-files/dockerfile.low .
 ```
 
 Archivos Dockerfiles:
