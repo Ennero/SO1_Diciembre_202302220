@@ -26,6 +26,34 @@ Guía práctica y amigable para construir imágenes, cargar los módulos de kern
 - Encabezados del kernel instalados: `sudo apt install linux-headers-$(uname -r)`
 - Permisos para usar Docker: ejecutar con `sudo` o agregar su usuario al grupo `docker` y reiniciar sesión: `sudo usermod -aG docker $USER`
 
+Instalar todas las dependencias (Ubuntu/Debian)
+
+```bash
+# Actualizar índices
+sudo apt update
+
+# Herramientas de compilación y headers
+sudo apt install -y build-essential linux-headers-$(uname -r)
+
+# Docker y Docker Compose (usa docker-compose v1)
+sudo apt install -y docker.io docker-compose
+
+# Habilitar y arrancar Docker
+sudo systemctl enable --now docker
+
+# (Opcional) Usar Docker sin sudo
+sudo usermod -aG docker "$USER"
+echo "[INFO] Cierra sesión y vuelve a entrar para aplicar grupo docker"
+
+# Go (si no lo tienes)
+sudo apt install -y golang
+
+# Verificaciones
+docker --version
+docker-compose --version
+go version
+```
+
 Iniciar el servicio de Docker (si no está activo)
 
 ```bash
@@ -87,7 +115,6 @@ cd proyecto-1/go-daemon
 
 # Instalar dependencias (solo la primera vez)
 # Nota: si ya existe `go.mod`, no ejecute `go mod init`
-go get github.com/mattn/go-sqlite3
 go mod tidy
 
 # Ejecutar con permisos de superusuario (lectura de /proc y manejo de contenedores)

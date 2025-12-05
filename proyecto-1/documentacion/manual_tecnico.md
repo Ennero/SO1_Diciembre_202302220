@@ -119,6 +119,36 @@ Nota: `HZ` puede variar según la distro (p. ej., 100, 250, 1000). Para mayor pr
 - **Go:** v1.20+
 - **Herramientas:** GCC y Make
 
+Instalar todas las dependencias necesarias (Ubuntu/Debian)
+
+```bash
+# Actualizar índices
+sudo apt update
+
+# Herramientas de compilación y headers del kernel (para construir .ko)
+sudo apt install -y build-essential linux-headers-$(uname -r)
+
+# Docker y Docker Compose (usa docker-compose v1)
+sudo apt install -y docker.io docker-compose
+
+# Habilitar y arrancar Docker
+sudo systemctl enable --now docker
+
+# Permitir usar Docker sin sudo (opcional)
+sudo usermod -aG docker "$USER"
+echo "[INFO] Cierra sesión y vuelve a entrar para aplicar grupo docker"
+
+# Go (si no lo tienes). Alternativa: usar versión del repositorio
+sudo apt install -y golang
+
+# Verificaciones rápidas
+docker --version
+docker-compose --version
+go version
+gcc --version
+make --version
+```
+
 Iniciar y verificar el servicio Docker
 
 ```bash
@@ -181,6 +211,9 @@ Archivo relacionado: `bash/generator.sh` — [ver archivo](../bash/generator.sh)
 
 ```bash
 cd ../go-daemon
+# Instalar dependencias de Go (una vez)
+go mod tidy
+
 sudo env "PATH=$PATH" go run main.go
 ```
 
