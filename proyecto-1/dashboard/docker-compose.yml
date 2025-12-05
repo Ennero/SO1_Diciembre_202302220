@@ -10,5 +10,4 @@ services:
       - GF_INSTALL_PLUGINS=frser-sqlite-datasource
     volumes:
       # Mapeamos el archivo de base de datos dentro del contenedor
-      # IMPORTANTE: Asegúrate de que metrics.db ya exista antes de iniciar esto
       - ../go-daemon/metrics.db:/var/lib/grafana/metrics.db:ro

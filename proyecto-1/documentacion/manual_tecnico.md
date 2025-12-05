@@ -25,6 +25,7 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 		- [6.4. Generación de Tráfico](#64-generación-de-tráfico)
 		- [6.5. Iniciar el Monitor (Daemon)](#65-iniciar-el-monitor-daemon)
 		- [6.6. Carpeta Compartida Host↔VM (Virtio-FS)](#66-carpeta-compartida-hostvm-virtio-fs)
+		- [6.6.1. Migrar proyecto desde carpeta compartida a Home (VM)](#661-migrar-proyecto-desde-carpeta-compartida-a-home-vm)
 		- [6.7. Levantar Grafana](#67-levantar-grafana)
 	- [7. Notas de Seguridad y Mantenimiento](#7-notas-de-seguridad-y-mantenimiento)
 	- [8. Referencias Rápidas](#8-referencias-rápidas)
@@ -185,7 +186,7 @@ Archivos Dockerfiles:
 ### 6.3. Compilación y Carga de los Módulos
 
 ```bash
-cd proyecto-1/modulo-kernel
+cd /modulo-kernel
 make clean && make
 sudo insmod procesos.ko
 sudo insmod ram.ko
@@ -266,11 +267,6 @@ cp -r /mnt/compartido/proyecto-1 .
 # 3. Entrar a la nueva copia (nativa de Linux)
 cd proyecto-1
 
-# 4. Levantar Grafana desde la copia
-cd dashboard
-touch ../go-daemon/metrics.db
-chmod 666 ../go-daemon/metrics.db
-sudo docker-compose up -d
 ```
 
 ### 6.7. Levantar Grafana

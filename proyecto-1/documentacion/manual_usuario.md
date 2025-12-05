@@ -217,11 +217,6 @@ cp -r /mnt/compartido/proyecto-1 .
 # 3. Entrar a la nueva copia (que ya es 100% Linux)
 cd proyecto-1
 
-# 4. Ahora intenta levantar todo desde aquí
-cd dashboard
-touch ../go-daemon/metrics.db
-chmod 666 ../go-daemon/metrics.db
-sudo docker-compose up -d
 ```
 
 
