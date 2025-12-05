@@ -1,5 +1,5 @@
 # Desde la imagen base de Alpine Linux
 FROM alpine:latest
 
-# Solo existe xd
+# Proceso ligero de baja carga
 CMD ["sleep", "infinity"]

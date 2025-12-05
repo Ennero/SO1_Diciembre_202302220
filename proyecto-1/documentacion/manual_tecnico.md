@@ -30,19 +30,16 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 ## 2. Módulo de Kernel (C)
 
 - **Ubicación:** `proyecto-1/modulo-kernel` — [abrir carpeta](../modulo-kernel/)
-- **Archivo principal:** `module.c` — [ver archivo](../modulo-kernel/module.c)
-- **Procfs expuesto:** `/proc/continfo_so1_202302220`
-- **Dependencias (headers):** `<linux/module.h>`, `<linux/sched.h>`, `<linux/mm.h>`, `<linux/seq_file.h>`, `<linux/sched/signal.h>`
+- **Archivos:** `procesos.c` (procesos) y `ram.c` (memoria)
+- **Procfs expuestos:** `/proc/sysinfo_so1_202302220` y `/proc/raminfo_so1_202302220`
+- **Dependencias (headers):** `<linux/module.h>`, `<linux/sched.h>`, `<linux/mm.h>`, `<linux/seq_file.h>`, `<linux/sched/signal.h>`, `<linux/sysinfo.h>`
 
 ### 2.1. Funciones principales
 
-- **`my_module_init`:** Inicializa el módulo y crea la entrada en `/proc` con permisos `0444` (solo lectura).
-- **`my_proc_show`:** Callback para generar el JSON en cada lectura. Recorre procesos con `for_each_process`, lee `task_struct` y `mm_struct` para:
-	- `pid` y `name` (`task->pid`, `task->comm`)
-	- `state` usando `task->__state`
-	- `ram_kb` (RSS) y `vsz_kb` (VSZ) con conversión de páginas a KB usando `PAGE_SHIFT`
-	- Tiempos crudos de CPU: `cpu_utime` y `cpu_stime`
-- **`my_module_exit`:** Elimina la entrada de `/proc` y descarga el módulo.
+- **`my_module_init` (ambos):** Crea entradas en `/proc` con permisos `0444` (solo lectura).
+- **`my_proc_show` en `procesos.c`:** Recorre procesos (`for_each_process`) y expone arreglo JSON con `pid`, `name`, `state`, `ram_kb` (RSS), `vsz_kb` (VSZ), `cpu_utime`, `cpu_stime`.
+- **`my_proc_show` en `ram.c`:** Expone objeto JSON con `total_ram_mb`, `free_ram_mb`, `used_ram_mb`, `percentage`.
+- **`my_module_exit` (ambos):** Elimina la entrada en `/proc`.
 
 ### 2.2. Métricas expuestas
 
@@ -65,10 +62,10 @@ Cada entrada del arreglo JSON tiene la forma:
 - **Ubicación:** `proyecto-1/go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 - **Frecuencia:** Ticker cada 5 segundos.
 - **Tareas por ciclo:**
-	- Obtener contenedores con `docker ps` (`exec.Command`).
-	- Leer y decodificar el JSON de `/proc/continfo_so1_202302220`.
-	- Calcular `%CPU` por diferencia de tiempos acumulados (`utime + stime`).
-	- Clasificar procesos en “ALTO” y “BAJO” consumo y aplicar límites.
+  - Obtener contenedores con `docker ps` (`exec.Command`).
+  - Leer y decodificar JSON de `/proc/sysinfo_so1_202302220` (procesos) y `/proc/raminfo_so1_202302220` (RAM).
+  - Calcular `%CPU` por diferencia de tiempos acumulados (`utime + stime`).
+  - Clasificar procesos en “ALTO” y “BAJO” consumo y aplicar límites.
 
 ### 3.1. Cálculo de %CPU
 
@@ -79,6 +76,8 @@ $$
 - `Δ(utime + stime)`: Diferencia de ticks de CPU entre lecturas.
 - `Δt`: Tiempo real entre lecturas (segundos).
 - `HZ`: Ticks por segundo del sistema (en la práctica del daemon se usa `HZ = 100`).
+
+Nota: `HZ` puede variar según la distro (p. ej., 100, 250, 1000). Para mayor precisión, puede leerse en tiempo de ejecución usando `getconf CLK_TCK` y ajustar el cálculo en el daemon.
 
 ### 3.2. Política de control (Thanos)
 
@@ -93,8 +92,7 @@ $$
 ## 5. Decisiones de Diseño y Problemas Encontrados
 
 ### Problema 1: Incompatibilidad de `task->state`
-- **Descripción:** En kernels 5.15+ o 6.x fallaba al acceder a `task->state`.
-- **Causa:** El campo fue renombrado/encapsulado en kernels recientes.
+**Solución:** Reinicio de la VM para limpiar estado del kernel y build limpio (asegurar nombre de objeto correcto). El Makefile genera `procesos.ko` y `ram.ko`.
 - **Solución:** Usar `task->__state` y ajustar formato de impresión a unsigned (`%u`).
 
 ### Problema 2: Error “Invalid Parameters” al insertar el módulo
@@ -132,23 +130,24 @@ Archivos Dockerfiles:
 - `docker-files/dockerfile.cpu` — [ver archivo](../docker-files/dockerfile.cpu)
 - `docker-files/dockerfile.low` — [ver archivo](../docker-files/dockerfile.low)
 
-### 6.3. Compilación y Carga del Módulo
+### 6.3. Compilación y Carga de los Módulos
 
 ```bash
 cd proyecto-1/modulo-kernel
 make clean && make
-sudo insmod module.ko
+sudo insmod procesos.ko
+sudo insmod ram.ko
 
 # Verificación
-cat /proc/continfo_so1_202302220
+cat /proc/sysinfo_so1_202302220
+cat /proc/raminfo_so1_202302220
 ```
-
-Debería ver un arreglo JSON con procesos y métricas.
 
 Archivos relacionados:
 
 - `modulo-kernel/Makefile` — [ver archivo](../modulo-kernel/Makefile)
-- `modulo-kernel/module.c` — [ver archivo](../modulo-kernel/module.c)
+- `modulo-kernel/procesos.c` — [ver archivo](../modulo-kernel/procesos.c)
+- `modulo-kernel/ram.c` — [ver archivo](../modulo-kernel/ram.c)
 
 ### 6.4. Generación de Tráfico
 
@@ -177,8 +176,9 @@ Archivo relacionado: `go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 - **`sudo` y `kill -9`:** Limitar pruebas a entornos controlados para evitar matar procesos críticos.
 - **Limpieza:**
 	```bash
-	# Descargar el módulo
-	sudo rmmod module
+	# Descargar los módulos
+	sudo rmmod procesos || true
+	sudo rmmod ram || true
 
 	# Detener y eliminar contenedores creados por las pruebas (opcional)
 	docker ps -aq --filter name=so1_contenedor_ | xargs -r docker stop
@@ -187,7 +187,7 @@ Archivo relacionado: `go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 
 ## 8. Referencias Rápidas
 
-- `modulo-kernel/Makefile`: genera `module.ko` con `obj-m += module.o`. — [ver archivo](../modulo-kernel/Makefile)
-- `go-daemon/main.go`: constantes `DESIRED_HIGH`, `DESIRED_LOW` y `PROC_FILE`. — [ver archivo](../go-daemon/main.go)
+- `modulo-kernel/Makefile`: genera `procesos.ko` y `ram.ko` (`obj-m += procesos.o` y `obj-m += ram.o`). — [ver archivo](../modulo-kernel/Makefile)
+- `go-daemon/main.go`: constantes `DESIRED_HIGH`, `DESIRED_LOW`, `PROC_FILE`, `RAM_FILE`. — [ver archivo](../go-daemon/main.go)
 - `bash/generator.sh`: crea 10 contenedores a partir de `so1_ram|so1_cpu|so1_low`. — [ver archivo](../bash/generator.sh)
 - `docker-files/`: `dockerfile.ram`, `dockerfile.cpu`, `dockerfile.low`. — [abrir carpeta](../docker-files/)

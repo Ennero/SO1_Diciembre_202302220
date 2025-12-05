@@ -7,7 +7,7 @@ services:
       - "3000:3000"
     environment:
       # Esto instala el plugin de SQLite automáticamente al iniciar
-      - GF_INSTALL_PLUGINS=fr-ser-sqlite-datasource
+      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
     volumes:
       # Mapeamos el archivo de base de datos dentro del contenedor
       # IMPORTANTE: Asegúrate de que metrics.db ya exista antes de iniciar esto

@@ -4,7 +4,7 @@ Proyecto de Sistemas Operativos 1: monitoreo de contenedores con módulos de Ker
 
 ## Contenidos
 
-- `proyecto-1/modulo-kernel/`: módulos de Kernel que expone métricas en `/proc` — [ver carpeta](proyecto-1/modulo-kernel/)
+- `proyecto-1/modulo-kernel/`: módulos de Kernel que exponen métricas en `/proc` — [ver carpeta](proyecto-1/modulo-kernel/)
 - `proyecto-1/go-daemon/`: daemon en Go que cruza métricas y gestiona procesos — [ver carpeta](proyecto-1/go-daemon/)
 - `proyecto-1/bash/`: scripts para generar carga — [ver carpeta](proyecto-1/bash/)
 - `proyecto-1/docker-files/`: Dockerfiles para imágenes de prueba — [ver carpeta](proyecto-1/docker-files/)

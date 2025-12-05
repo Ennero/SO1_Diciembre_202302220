@@ -104,6 +104,13 @@ Acceder a Grafana en: http://localhost:3000 (Usuario: `admin` / Password: `admin
 
 Nota: el `docker-compose.yml` monta la base desde `../go-daemon/metrics.db` hacia `/var/lib/grafana/metrics.db` en modo lectura. Asegúrate de crear el archivo en `proyecto-1/go-daemon/metrics.db` antes de `docker-compose up -d`.
 
+Configuración rápida en Grafana:
+- Añade un Data Source de tipo "SQLite" (el plugin ya se instala automáticamente).
+- Ruta del archivo: `/var/lib/grafana/metrics.db` (montado en el contenedor).
+- Guarda y prueba. Ejemplos de consultas:
+	- `SELECT timestamp, percentage FROM ram_log ORDER BY timestamp DESC LIMIT 50;`
+	- `SELECT timestamp, name, ram, cpu FROM process_log ORDER BY timestamp DESC LIMIT 50;`
+
 ### 5 Generar tráfico (contenedores de prueba)
 
 ```bash
