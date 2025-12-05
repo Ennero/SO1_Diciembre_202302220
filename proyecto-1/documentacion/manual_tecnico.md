@@ -186,7 +186,7 @@ Archivos Dockerfiles:
 ### 6.3. Compilación y Carga de los Módulos
 
 ```bash
-cd /modulo-kernel
+cd modulo-kernel/
 make clean && make
 sudo insmod procesos.ko
 sudo insmod ram.ko
