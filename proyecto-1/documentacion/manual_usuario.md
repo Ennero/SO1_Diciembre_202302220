@@ -12,6 +12,7 @@ Guía práctica y amigable para construir imágenes, cargar los módulos de kern
 		- [2 Compilar y cargar los módulos del Kernel](#2-compilar-y-cargar-los-módulos-del-kernel)
 		- [3 Iniciar Monitor y Base de Datos (Go)](#3-iniciar-monitor-y-base-de-datos-go)
 		- [4 Levantar Grafana](#4-levantar-grafana)
+			- [Las 8 Consultas para Grafana (Dashboard)](#las-8-consultas-para-grafana-dashboard)
 		- [5 Generar tráfico (contenedores de prueba)](#5-generar-tráfico-contenedores-de-prueba)
 	- [Carpeta Compartida Host↔VM (Virtio-FS)](#carpeta-compartida-hostvm-virtio-fs)
 		- [Migrar el proyecto desde carpeta compartida a Home (100% Linux)](#migrar-el-proyecto-desde-carpeta-compartida-a-home-100-linux)
@@ -150,8 +151,114 @@ Configuración rápida en Grafana:
 - Añade un Data Source de tipo "SQLite" (el plugin ya se instala automáticamente).
 - Ruta del archivo: `/var/lib/grafana/metrics.db` (montado en el contenedor).
 - Guarda y prueba. Ejemplos de consultas:
-	- `SELECT timestamp, percentage FROM ram_log ORDER BY timestamp DESC LIMIT 50;`
-	- `SELECT timestamp, name, ram, cpu FROM process_log ORDER BY timestamp DESC LIMIT 50;`
+
+#### Las 8 Consultas para Grafana (Dashboard)
+
+1) Monitor de RAM en Tiempo Real (Dientes de Sierra)
+- Visualización: Time Series (líneas)
+- Qué muestra: Evolución del porcentaje de RAM del sistema.
+
+```sql
+SELECT 
+	timestamp,
+	percentage AS "Uso RAM %"
+FROM ram_log 
+ORDER BY timestamp ASC;
+```
+
+2) Consumo de RAM en MB (Actual)
+- Visualización: Gauge o Stat
+- Qué muestra: MB usados actualmente.
+
+```sql
+SELECT 
+	used AS "MB Usados"
+FROM ram_log 
+ORDER BY timestamp DESC 
+LIMIT 1;
+```
+
+3) Total de Contenedores Eliminados
+- Visualización: Stat
+- Qué muestra: Conteo histórico de eliminaciones (Thanos).
+
+```sql
+SELECT COUNT(*) AS "Total Eliminados" FROM kill_log;
+```
+
+4) Historial de Eliminaciones (Log de Muertes)
+- Visualización: Table
+- Qué muestra: Quién se mató, cuándo y por qué.
+
+```sql
+SELECT 
+	timestamp AS "Fecha/Hora", 
+	pid AS "PID", 
+	name AS "Nombre Contenedor", 
+	reason AS "Razón"
+FROM kill_log 
+ORDER BY timestamp DESC;
+```
+
+5) Top Contenedores por Consumo de CPU (Histórico)
+- Visualización: Bar Gauge
+- Qué muestra: Máximo %CPU registrado por contenedor.
+
+```sql
+SELECT 
+	name || ' (' || pid || ')' AS Container, 
+	MAX(cpu) AS "Max CPU %"
+FROM process_log 
+GROUP BY pid, name
+ORDER BY "Max CPU %" DESC 
+LIMIT 5;
+```
+
+6) Top Contenedores por Consumo de RAM (Histórico)
+- Visualización: Bar Gauge
+- Qué muestra: Máximo RAM MB por contenedor.
+
+```sql
+SELECT 
+	name || ' (' || pid || ')' AS Container, 
+	MAX(ram) AS "Max RAM MB"
+FROM process_log 
+GROUP BY pid, name
+ORDER BY "Max RAM MB" DESC 
+LIMIT 5;
+```
+
+7) Tabla de Procesos en Ejecución (Snapshot Actual)
+- Visualización: Table
+- Qué muestra: Últimos procesos registrados con RAM y CPU.
+
+```sql
+SELECT 
+	timestamp, 
+	pid, 
+	name, 
+	ram AS "RAM (MB)", 
+	cpu AS "CPU (%)"
+FROM process_log 
+ORDER BY timestamp DESC 
+LIMIT 10;
+```
+
+8) Porcentaje de CPU en Tiempo Real (Por Contenedor)
+- Visualización: Time Series
+- Qué muestra: Serie temporal por contenedor (métrica por nombre+pid).
+
+```sql
+SELECT 
+	timestamp,
+	cpu,
+	name || '_' || pid AS metric
+FROM process_log
+WHERE timestamp > datetime('now', '-2 minutes')
+ORDER BY timestamp ASC;
+```
+
+Nota: En la visualización 8, configura en Grafana la opción "Column to use as metric" → `metric`.
 
 ### 5 Generar tráfico (contenedores de prueba)
 

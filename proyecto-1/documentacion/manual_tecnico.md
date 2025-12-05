@@ -290,9 +290,97 @@ Accede a Grafana en: `http://localhost:3000` (Usuario: `admin` / Password: `admi
 El `docker-compose.yml` monta la base `../go-daemon/metrics.db` hacia `/var/lib/grafana/metrics.db`. En Grafana:
 - Añade Data Source tipo "SQLite".
 - Ruta del archivo: `/var/lib/grafana/metrics.db`.
-- Consultas ejemplo:
-	- `SELECT timestamp, percentage FROM ram_log ORDER BY timestamp DESC LIMIT 50;`
-	- `SELECT timestamp, name, ram, cpu FROM process_log ORDER BY timestamp DESC LIMIT 50;`
+- Consultas para Dashboard (8 vistas):
+
+1) Monitor de RAM en Tiempo Real (Dientes de Sierra) — Time Series
+
+```sql
+SELECT 
+	timestamp,
+	percentage AS "Uso RAM %"
+FROM ram_log 
+ORDER BY timestamp ASC;
+```
+
+2) Consumo de RAM en MB (Actual) — Gauge/Stat
+
+```sql
+SELECT 
+	used AS "MB Usados"
+FROM ram_log 
+ORDER BY timestamp DESC 
+LIMIT 1;
+```
+
+3) Total de Contenedores Eliminados — Stat
+
+```sql
+SELECT COUNT(*) AS "Total Eliminados" FROM kill_log;
+```
+
+4) Historial de Eliminaciones (Log de Muertes) — Table
+
+```sql
+SELECT 
+	timestamp AS "Fecha/Hora", 
+	pid AS "PID", 
+	name AS "Nombre Contenedor", 
+	reason AS "Razón"
+FROM kill_log 
+ORDER BY timestamp DESC;
+```
+
+5) Top Contenedores por Consumo de CPU (Histórico) — Bar Gauge
+
+```sql
+SELECT 
+	name || ' (' || pid || ')' AS Container, 
+	MAX(cpu) AS "Max CPU %"
+FROM process_log 
+GROUP BY pid, name
+ORDER BY "Max CPU %" DESC 
+LIMIT 5;
+```
+
+6) Top Contenedores por Consumo de RAM (Histórico) — Bar Gauge
+
+```sql
+SELECT 
+	name || ' (' || pid || ')' AS Container, 
+	MAX(ram) AS "Max RAM MB"
+FROM process_log 
+GROUP BY pid, name
+ORDER BY "Max RAM MB" DESC 
+LIMIT 5;
+```
+
+7) Tabla de Procesos en Ejecución (Snapshot Actual) — Table
+
+```sql
+SELECT 
+	timestamp, 
+	pid, 
+	name, 
+	ram AS "RAM (MB)", 
+	cpu AS "CPU (%)"
+FROM process_log 
+ORDER BY timestamp DESC 
+LIMIT 10;
+```
+
+8) Porcentaje de CPU en Tiempo Real (Por Contenedor) — Time Series
+
+```sql
+SELECT 
+	timestamp,
+	cpu,
+	name || '_' || pid AS metric
+FROM process_log
+WHERE timestamp > datetime('now', '-2 minutes')
+ORDER BY timestamp ASC;
+```
+
+Nota: En la vista 8, configurar en Grafana "Column to use as metric" → `metric`.
 
 ## 7. Notas de Seguridad y Mantenimiento
 
