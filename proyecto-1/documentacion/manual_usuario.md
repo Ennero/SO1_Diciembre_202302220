@@ -8,6 +8,7 @@ Guía práctica y amigable para construir imágenes, cargar los módulos de kern
 	- [Índice](#índice)
 	- [Requisitos Previos](#requisitos-previos)
 	- [Instalación y Ejecución](#instalación-y-ejecución)
+		- [Ejecución automática (setup\_all.sh)](#ejecución-automática-setup_allsh)
 		- [1 Construir imágenes de Docker](#1-construir-imágenes-de-docker)
 		- [2 Compilar y cargar los módulos del Kernel](#2-compilar-y-cargar-los-módulos-del-kernel)
 		- [3 Iniciar Monitor y Base de Datos (Go)](#3-iniciar-monitor-y-base-de-datos-go)
@@ -77,6 +78,22 @@ sudo systemctl status docker
 ```
 
 ## Instalación y Ejecución
+
+### Ejecución automática (setup_all.sh)
+
+Si prefieres automatizar todo (montaje de carpeta compartida, migración a Home, instalación de dependencias, build de imágenes, compilación/carga de módulos, Grafana y daemon), usa el script:
+
+```bash
+# Desde la raíz del repositorio
+cd proyecto-1/bash
+chmod +x setup_all.sh
+./setup_all.sh
+```
+
+Notas:
+- El script intenta montar `virtiofs` con el Target `micarpeta` y, si falla, usa `9p`. Puedes editar `proyecto-1/bash/setup_all.sh` para ajustar `SHARED_TARGET_NAME` y `SHARED_MOUNTPOINT`.
+- Si es la primera vez que se agrega tu usuario al grupo `docker`, cierra sesión y vuelve a entrar para que aplique.
+- El daemon se ejecuta al final en primer plano. Para detenerlo, usa `Ctrl+C`.
 
 ### 1 Construir imágenes de Docker
 
@@ -266,6 +283,8 @@ ORDER BY timestamp ASC;
 ```
 
 Nota: En la visualización 8, configura en Grafana la opción "Column to use as metric" → `metric`.
+
+Tip: Si usas el daemon modificado (ver `go-daemon/main.go`), Grafana se levanta automáticamente y el generador de tráfico corre cada 60s.
 
 ### 5 Generar tráfico (contenedores de prueba)
 

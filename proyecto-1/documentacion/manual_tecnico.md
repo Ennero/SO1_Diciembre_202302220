@@ -382,6 +382,8 @@ ORDER BY timestamp ASC;
 
 Nota: En la vista 8, configurar en Grafana "Column to use as metric" → `metric`.
 
+Tip: Con el `main.go` actualizado, el daemon intenta levantar Grafana automáticamente usando `docker-compose` (o `docker compose` si el primero falla) y ejecuta el generador de tráfico cada 60s.
+
 ## 7. Notas de Seguridad y Mantenimiento
 
 - **Solo lectura en `/proc`:** No habilitar escritura si no hay handlers seguros.

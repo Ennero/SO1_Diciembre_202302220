@@ -17,29 +17,48 @@ Consulte los manuales:
 - Manual de Usuario — [documentacion/manual_usuario.md](proyecto-1/documentacion/manual_usuario.md)
 - Manual Técnico — [documentacion/manual_tecnico.md](proyecto-1/documentacion/manual_tecnico.md)
 
-Comandos esenciales (desde `proyecto-1/`):
+### Ejecución automática (recomendada)
 
 ```bash
-# Construir imágenes
-docker build -t so1_ram -f docker-files/dockerfile.ram .
-docker build -t so1_cpu -f docker-files/dockerfile.cpu .
-docker build -t so1_low -f docker-files/dockerfile.low .
+cd proyecto-1/bash
+chmod +x setup_all.sh
+sudo ./setup_all.sh
+```
 
-# Compilar y cargar módulos de kernel
-cd modulo-kernel && make && sudo insmod procesos.ko && sudo insmod ram.ko && cd -
+- Migra el proyecto desde carpeta compartida a `~/proyecto-1` (evita locking/ACL en SQLite/Docker).
+- Instala dependencias, construye imágenes, compila/carga módulos del kernel.
+- El daemon de Go levanta Grafana automáticamente y genera tráfico periódico.
+- Acceso Grafana: http://localhost:3000 (admin/admin).
 
-# Verificar entradas /proc
+### Ejecución manual (resumen)
+
+```bash
+# Dependencias
+sudo apt update
+sudo apt install -y build-essential linux-headers-$(uname -r) docker.io docker-compose golang
+sudo systemctl enable --now docker
+
+# Migrar desde carpeta compartida (si aplica)
+cd ~ && cp -r /mnt/compartido/proyecto-1 . && cd proyecto-1
+
+# Imágenes Docker
+sudo docker build -t so1_ram -f docker-files/dockerfile.ram .
+sudo docker build -t so1_cpu -f docker-files/dockerfile.cpu .
+sudo docker build -t so1_low -f docker-files/dockerfile.low .
+
+# Módulos de kernel
+cd modulo-kernel && make clean && make && sudo insmod procesos.ko && sudo insmod ram.ko && cd -
+
+# Verificar /proc
 cat /proc/sysinfo_so1_202302220
 cat /proc/continfo_so1_202302220
 
-# Generar carga
-cd bash && chmod +x generator.sh && ./generator.sh && cd -
+# Grafana
+touch go-daemon/metrics.db && chmod 666 go-daemon/metrics.db
+cd dashboard && sudo docker-compose up -d && cd -
 
-# Ejecutar daemon (desde go-daemon)
-cd go-daemon && sudo env "PATH=$PATH" go run main.go
-
-# Levantar Grafana (desde dashboard)
-cd ../dashboard && docker-compose up -d
+# Daemon Go
+cd go-daemon && go mod tidy && sudo env "PATH=$PATH" go run main.go
 ```
 
 ## Licencia

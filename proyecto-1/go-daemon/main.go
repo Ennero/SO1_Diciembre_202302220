@@ -17,8 +17,9 @@ const RAM_FILE = "/proc/continfo_so1_202302220"
 const PROC_FILE = "/proc/sysinfo_so1_202302220"
 const DB_FILE = "./metrics.db"
 
-// Ruta relativa al script desde la carpeta go-daemon
+// Rutas relativas desde la carpeta go-daemon
 const GENERATOR_SCRIPT = "../bash/generator.sh"
+const GRAFANA_COMPOSE = "../dashboard/docker-compose.yml"
 
 const DESIRED_LOW = 3
 const DESIRED_HIGH = 2
@@ -52,28 +53,32 @@ var history = make(map[int]ProcessStats)
 var db *sql.DB
 
 func main() {
-	fmt.Println("--- Iniciando Daemon SO1 (Automático) ---")
+	fmt.Println("--- Iniciando Daemon SO1 (Full Automático) ---")
 
+	// 1. Inicializar BD (Vital hacerlo antes de Docker)
 	initDB()
 	defer db.Close()
 
 	fmt.Println("Monitor RAM:", RAM_FILE)
 	fmt.Println("Monitor Procesos:", PROC_FILE)
-	fmt.Println("Script Generador:", GENERATOR_SCRIPT)
 
-	// Ticker 1: Monitoreo y "Thanos" (Cada 5 segundos)
+	// 2. Levantar Grafana Automáticamente
+	startGrafanaService()
+
+	// 3. Configurar Timers
 	monitorTicker := time.NewTicker(5 * time.Second)
 	defer monitorTicker.Stop()
 
-	// Ticker 2: Generador de Tráfico (Cada 60 segundos)
-	// Ajusta este tiempo si quieres que se creen contenedores más rápido o más lento
+	// Generador de tráfico (Cada 60s)
 	generatorTicker := time.NewTicker(60 * time.Second)
 	defer generatorTicker.Stop()
 
-	// Ejecutar una carga inicial al arrancar
+	// Carga inicial de tráfico
 	go triggerTraffic()
 
-	// Bucle infinito manejando ambos timers
+	fmt.Println("✅ Sistema corriendo. Presiona Ctrl+C para detener.")
+
+	// Bucle principal
 	for {
 		select {
 		case <-monitorTicker.C:
@@ -86,7 +91,7 @@ func main() {
 			// Cada 60 seg: Crear nuevos contenedores
 			fmt.Println("\n------------------------------------------------")
 			fmt.Printf("[%s] 🚀 Generando tráfico automático...\n", time.Now().Format("15:04:05"))
-			go triggerTraffic() // Ejecutar en goroutine para no bloquear el monitor
+			go triggerTraffic()
 		}
 	}
 }
@@ -99,6 +104,7 @@ func initDB() {
 		os.Exit(1)
 	}
 
+	// Permisos vitales para que Grafana pueda leer el archivo
 	os.Chmod(DB_FILE, 0666)
 
 	// Tablas
@@ -127,13 +133,38 @@ func initDB() {
         reason TEXT
     );`)
 
-	fmt.Println("Base de datos lista: metrics.db")
+	fmt.Println("✅ Base de datos lista: metrics.db")
 }
 
-// --- NUEVA FUNCIÓN: EJECUTAR BASH SCRIPT ---
+// --- FUNCIÓN NUEVA: LEVANTAR GRAFANA ---
+func startGrafanaService() {
+	fmt.Println("🐳 Intentando levantar Grafana con Docker Compose...")
+
+	// Usamos la ruta relativa definida en la constante
+	cmd := exec.Command("docker-compose", "-f", GRAFANA_COMPOSE, "up", "-d")
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Si falla docker-compose, intentamos con "docker compose" (versión nueva)
+		fmt.Println("⚠️ 'docker-compose' falló, intentando 'docker compose'...")
+		cmd = exec.Command("docker", "compose", "-f", GRAFANA_COMPOSE, "up", "-d")
+		output, err = cmd.CombinedOutput() // Aquí reasignamos output
+		if err != nil {
+			fmt.Printf("❌ Error crítico levantando Grafana: %v\n", err)
+			fmt.Println("Salida:", string(output)) // Aquí sí se usaba
+			fmt.Println("➡️ INTENTA LEVANTARLO MANUALMENTE EN LA CARPETA DASHBOARD")
+			return
+		}
+	}
+	
+	// --- CORRECCIÓN AQUÍ ---
+	// Antes no usábamos 'output' si todo salía bien. Ahora lo imprimimos.
+	fmt.Println("✅ Grafana levantado correctamente (localhost:3000)")
+	fmt.Println("Detalles Docker:", string(output)) 
+}
+
 func triggerTraffic() {
 	cmd := exec.Command("/bin/bash", GENERATOR_SCRIPT)
-	// Capturar salida por si hay errores en el script
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("⚠️ Error ejecutando generator.sh: %v\n", err)
@@ -144,7 +175,6 @@ func triggerTraffic() {
 }
 
 func loop() {
-	// --- A. RAM ---
 	ramData, err := readRamModule()
 	if err != nil {
 		fmt.Printf("⚠️ Error leyendo RAM (%s): %v\n", RAM_FILE, err)
@@ -153,7 +183,6 @@ func loop() {
 		insertRamLog(ramData)
 	}
 
-	// --- B. PROCESOS ---
 	dockerContainers := getDockerContainers()
 	kernelProcs, err := readProcessModule()
 	if err != nil {
@@ -199,7 +228,6 @@ func loop() {
 
 	fmt.Printf("RESUMEN: Altos: %d/%d | Bajos: %d/%d\n", countHigh, DESIRED_HIGH, countLow, DESIRED_LOW)
 
-	// --- C. THANOS ---
 	if len(dockerContainers) > 0 {
 		if countHigh > DESIRED_HIGH {
 			fmt.Printf("⚠️ Exceso ALTOS. Eliminando %d...\n", countHigh-DESIRED_HIGH)
@@ -216,13 +244,13 @@ func loop() {
 
 func insertRamLog(ram SystemRam) {
 	stmt, _ := db.Prepare("INSERT INTO ram_log(total, used, percentage) VALUES(?, ?, ?)")
-	defer stmt.Close()
+    defer stmt.Close()
 	stmt.Exec(ram.TotalMB, ram.UsedMB, ram.Percentage)
 }
 
 func insertProcessLog(ts time.Time, pid int, name string, ram int, cpu float64) {
 	stmt, _ := db.Prepare("INSERT INTO process_log(timestamp, pid, name, ram, cpu) VALUES(?, ?, ?, ?, ?)")
-	defer stmt.Close()
+    defer stmt.Close()
 	stmt.Exec(ts, pid, name, ram, cpu)
 }
 
@@ -232,7 +260,7 @@ func insertKillLog(pid int, name string, reason string) {
 		fmt.Println("Error logueando kill:", err)
 		return
 	}
-	defer stmt.Close()
+    defer stmt.Close()
 	stmt.Exec(pid, name, reason)
 }
 
@@ -256,7 +284,7 @@ func readRamModule() (SystemRam, error) {
 	data, err := os.ReadFile(RAM_FILE)
 	if err != nil {
 		return stats, err
-    }
+	}
 	err = json.Unmarshal(data, &stats)
 	return stats, err
 }
