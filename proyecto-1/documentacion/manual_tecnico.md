@@ -4,23 +4,29 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 
 ## Índice
 
-- [1. Arquitectura del Sistema](#1-arquitectura-del-sistema)
-- [2. Módulo de Kernel (C)](#2-módulo-de-kernel-c)
-	- [2.1. Funciones principales](#21-funciones-principales)
-	- [2.2. Métricas expuestas](#22-métricas-expuestas)
-- [3. Daemon (Go)](#3-daemon-go)
-	- [3.1. Cálculo de %CPU](#31-cálculo-de-cpu)
-	- [3.2. Política de control (Thanos)](#32-política-de-control-thanos)
-- [4. Automatización (Bash)](#4-automatización-bash)
-- [5. Decisiones de Diseño y Problemas Encontrados](#5-decisiones-de-diseño-y-problemas-encontrados)
-- [6. Instalación y Ejecución](#6-instalación-y-ejecución)
-	- [6.1. Requisitos Previos](#61-requisitos-previos)
-	- [6.2. Construcción de Imágenes Docker](#62-construcción-de-imágenes-docker)
-	- [6.3. Compilación y Carga del Módulo](#63-compilación-y-carga-del-módulo)
-	- [6.4. Generación de Tráfico](#64-generación-de-tráfico)
-	- [6.5. Iniciar el Monitor (Daemon)](#65-iniciar-el-monitor-daemon)
-- [7. Notas de Seguridad y Mantenimiento](#7-notas-de-seguridad-y-mantenimiento)
-- [8. Referencias Rápidas](#8-referencias-rápidas)
+- [Manual Técnico — Proyecto 1 (SO1)](#manual-técnico--proyecto-1-so1)
+	- [Índice](#índice)
+	- [1. Arquitectura del Sistema](#1-arquitectura-del-sistema)
+	- [2. Módulo de Kernel (C)](#2-módulo-de-kernel-c)
+		- [2.1. Funciones principales](#21-funciones-principales)
+		- [2.2. Métricas expuestas](#22-métricas-expuestas)
+	- [3. Daemon (Go)](#3-daemon-go)
+		- [3.1. Cálculo de %CPU](#31-cálculo-de-cpu)
+		- [3.2. Política de control](#32-política-de-control)
+	- [4. Automatización (Bash)](#4-automatización-bash)
+	- [5. Decisiones de Diseño y Problemas Encontrados](#5-decisiones-de-diseño-y-problemas-encontrados)
+		- [Problema 1: Incompatibilidad de `task->state`](#problema-1-incompatibilidad-de-task-state)
+		- [Problema 2: Error “Invalid Parameters” al insertar el módulo](#problema-2-error-invalid-parameters-al-insertar-el-módulo)
+		- [Problema 3: Módulo “zombie”](#problema-3-módulo-zombie)
+	- [6. Instalación y Ejecución](#6-instalación-y-ejecución)
+		- [6.1. Requisitos Previos](#61-requisitos-previos)
+		- [6.2. Construcción de Imágenes Docker](#62-construcción-de-imágenes-docker)
+		- [6.3. Compilación y Carga de los Módulos](#63-compilación-y-carga-de-los-módulos)
+		- [6.4. Generación de Tráfico](#64-generación-de-tráfico)
+		- [6.5. Iniciar el Monitor (Daemon)](#65-iniciar-el-monitor-daemon)
+		- [6.6. Carpeta Compartida Host↔VM (Virtio-FS)](#66-carpeta-compartida-hostvm-virtio-fs)
+	- [7. Notas de Seguridad y Mantenimiento](#7-notas-de-seguridad-y-mantenimiento)
+	- [8. Referencias Rápidas](#8-referencias-rápidas)
 
 ## 1. Arquitectura del Sistema
 
@@ -31,7 +37,7 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 
 - **Ubicación:** `proyecto-1/modulo-kernel` — [abrir carpeta](../modulo-kernel/)
 - **Archivos:** `procesos.c` (procesos) y `ram.c` (memoria)
-- **Procfs expuestos:** `/proc/sysinfo_so1_202302220` y `/proc/raminfo_so1_202302220`
+- **Procfs expuestos:** `/proc/sysinfo_so1_202302220` y `/proc/continfo_so1_202302220`
 - **Dependencias (headers):** `<linux/module.h>`, `<linux/sched.h>`, `<linux/mm.h>`, `<linux/seq_file.h>`, `<linux/sched/signal.h>`, `<linux/sysinfo.h>`
 
 ### 2.1. Funciones principales
@@ -63,7 +69,7 @@ Cada entrada del arreglo JSON tiene la forma:
 - **Frecuencia:** Ticker cada 5 segundos.
 - **Tareas por ciclo:**
   - Obtener contenedores con `docker ps` (`exec.Command`).
-  - Leer y decodificar JSON de `/proc/sysinfo_so1_202302220` (procesos) y `/proc/raminfo_so1_202302220` (RAM).
+	- Leer y decodificar JSON de `/proc/sysinfo_so1_202302220` (procesos) y `/proc/continfo_so1_202302220` (RAM).
   - Calcular `%CPU` por diferencia de tiempos acumulados (`utime + stime`).
   - Clasificar procesos en “ALTO” y “BAJO” consumo y aplicar límites.
 
@@ -79,7 +85,7 @@ $$
 
 Nota: `HZ` puede variar según la distro (p. ej., 100, 250, 1000). Para mayor precisión, puede leerse en tiempo de ejecución usando `getconf CLK_TCK` y ajustar el cálculo en el daemon.
 
-### 3.2. Política de control (Thanos)
+### 3.2. Política de control 
 
 - **Constantes:** `DESIRED_HIGH = 2`, `DESIRED_LOW = 3`.
 - **Acción:** Si hay más procesos de los deseados en cada categoría, se eliminan los sobrantes con `kill -9 <PID>`.
@@ -140,7 +146,7 @@ sudo insmod ram.ko
 
 # Verificación
 cat /proc/sysinfo_so1_202302220
-cat /proc/raminfo_so1_202302220
+cat /proc/continfo_so1_202302220
 ```
 
 Archivos relacionados:

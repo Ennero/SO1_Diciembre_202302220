@@ -14,7 +14,7 @@ import (
 
 // --- CONFIGURACIÓN ---
 // Nombres exactos definidos en tus archivos .c
-const RAM_FILE = "/proc/raminfo_so1_202302220"
+const RAM_FILE = "/proc/continfo_so1_202302220"
 const PROC_FILE = "/proc/sysinfo_so1_202302220" 
 const DB_FILE = "./metrics.db"
 

@@ -57,7 +57,7 @@ sudo insmod ram.ko
 
 # Verificación de dispositivos /proc
 cat /proc/sysinfo_so1_202302220
-cat /proc/raminfo_so1_202302220
+cat /proc/continfo_so1_202302220
 ```
 
 Debería mostrarse un arreglo JSON con la lista de procesos y métricas. Si hay errores al cargar, revise `dmesg | tail -n 50`.
@@ -171,7 +171,7 @@ sudo mount -t 9p -o trans=virtio,version=9p2000.L micarpeta /mnt/compartido
 	- Si los nodos `/proc` no tienen permisos correctos, recompilar; el código ya define `0444` (solo lectura).
 - Docker requiere privilegios
 	- Use `sudo` o agregue su usuario al grupo `docker` y reabra sesión.
-- No aparece `/proc/sysinfo_so1_202302220` o `/proc/raminfo_so1_202302220`
+- No aparece `/proc/sysinfo_so1_202302220` o `/proc/continfo_so1_202302220`
 	- Confirme que los módulos estén cargados: `lsmod | grep so1`
 	- Intente recargar: `sudo rmmod procesos` y/o `sudo rmmod ram` y vuelva a hacer `insmod`.
 - Go no encuentra dependencias o no ejecuta

@@ -30,7 +30,7 @@ cd modulo-kernel && make && sudo insmod procesos.ko && sudo insmod ram.ko && cd 
 
 # Verificar entradas /proc
 cat /proc/sysinfo_so1_202302220
-cat /proc/raminfo_so1_202302220
+cat /proc/continfo_so1_202302220
 
 # Generar carga
 cd bash && chmod +x generator.sh && ./generator.sh && cd -

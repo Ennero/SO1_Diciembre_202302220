@@ -31,12 +31,12 @@ sudo insmod ram.ko
 
 # Verificar entradas /proc
 cat /proc/sysinfo_so1_202302220
-cat /proc/raminfo_so1_202302220
+cat /proc/continfo_so1_202302220
 ```
 
 Salida esperada:
 - `sysinfo_so1_202302220`: arreglo JSON con `pid`, `name`, `state`, `ram_kb`, `vsz_kb`, `cpu_utime`, `cpu_stime`.
-- `raminfo_so1_202302220`: objeto JSON con `total_ram_mb`, `free_ram_mb`, `used_ram_mb`, `percentage`.
+- `continfo_so1_202302220`: objeto JSON con `total_ram_mb`, `free_ram_mb`, `used_ram_mb`, `percentage`.
 
 ## Descarga
 

@@ -12,7 +12,7 @@ MODULE_DESCRIPTION("Modulo RAM SO1");
 MODULE_VERSION("1.0");
 
 // CAMBIAR CARNET
-#define PROCFS_NAME "raminfo_so1_202302220"
+#define PROCFS_NAME "continfo_so1_202302220"
 
 static int my_proc_show(struct seq_file *m, void *v) {
     struct sysinfo si;
