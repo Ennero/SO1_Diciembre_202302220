@@ -78,6 +78,8 @@ func initDB() {
 		os.Exit(1)
 	}
 
+	os.Chmod(DB_FILE, 0666)
+
 	// Tabla 1: Histórico de RAM Global
 	q1 := `CREATE TABLE IF NOT EXISTS ram_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
