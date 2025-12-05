@@ -15,7 +15,7 @@ import (
 // --- CONFIGURACIÓN ---
 // Nombres exactos definidos en tus archivos .c
 const RAM_FILE = "/proc/continfo_so1_202302220"
-const PROC_FILE = "/proc/sysinfo_so1_202302220" 
+const PROC_FILE = "/proc/sysinfo_so1_202302220"
 const DB_FILE = "./metrics.db"
 
 const DESIRED_LOW = 3
@@ -53,7 +53,7 @@ var db *sql.DB
 
 func main() {
 	fmt.Println("--- Iniciando Daemon SO1 (Doble Módulo) ---")
-	
+
 	initDB()
 	defer db.Close()
 
@@ -100,7 +100,7 @@ func initDB() {
 		cpu REAL
 	);`
 	db.Exec(q2)
-	
+
 	fmt.Println("Base de datos lista: metrics.db")
 }
 
@@ -116,7 +116,7 @@ func loop() {
 
 	// --- PARTE B: PROCESOS, DOCKER Y THANOS ---
 	dockerContainers := getDockerContainers()
-	
+
 	kernelProcs, err := readProcessModule()
 	if err != nil {
 		fmt.Printf("⚠️ Error leyendo Procesos (%s): %v\n", PROC_FILE, err)
@@ -135,7 +135,11 @@ func loop() {
 
 		// 1. Identificar si es un contenedor nuestro
 		if strings.Contains(proc.Name, "stress") {
-			if proc.RamKB > 50000 { isHigh = true } else { isHigh = true }
+			if proc.RamKB > 50000 {
+				isHigh = true
+			} else {
+				isHigh = true
+			}
 		} else if strings.Contains(proc.Name, "sleep") {
 			isLow = true
 		}
@@ -146,11 +150,13 @@ func loop() {
 			ramMB := int(proc.RamKB / 1024)
 
 			tipo := "BAJO"
-			if isHigh { tipo = "ALTO" }
-			
-			fmt.Printf(" -> [%s] PID %d | RAM: %d MB | CPU: %.2f%%\n", 
+			if isHigh {
+				tipo = "ALTO"
+			}
+
+			fmt.Printf(" -> [%s] PID %d | RAM: %d MB | CPU: %.2f%%\n",
 				tipo, proc.Pid, ramMB, cpuPercent)
-			
+
 			// Guardar en BD
 			insertProcessLog(now, proc.Pid, proc.Name, ramMB, cpuPercent)
 
@@ -170,11 +176,11 @@ func loop() {
 	if len(dockerContainers) > 0 {
 		if countHigh > DESIRED_HIGH {
 			fmt.Printf("⚠️ Exceso de ALTOS (%d > %d). Eliminando...\n", countHigh, DESIRED_HIGH)
-			killContainers(countHigh - DESIRED_HIGH, procsHigh)
+			killContainers(countHigh-DESIRED_HIGH, procsHigh)
 		}
 		if countLow > DESIRED_LOW {
 			fmt.Printf("⚠️ Exceso de BAJOS (%d > %d). Eliminando...\n", countLow, DESIRED_LOW)
-			killContainers(countLow - DESIRED_LOW, procsLow)
+			killContainers(countLow-DESIRED_LOW, procsLow)
 		}
 	}
 }
@@ -184,14 +190,18 @@ func loop() {
 func readRamModule() (SystemRam, error) {
 	var stats SystemRam
 	data, err := os.ReadFile(RAM_FILE)
-	if err != nil { return stats, err }
+	if err != nil {
+		return stats, err
+	}
 	err = json.Unmarshal(data, &stats)
 	return stats, err
 }
 
 func readProcessModule() ([]KernelProcess, error) {
 	data, err := os.ReadFile(PROC_FILE)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var procs []KernelProcess
 	err = json.Unmarshal(data, &procs)
 	return procs, err
@@ -201,14 +211,20 @@ func readProcessModule() ([]KernelProcess, error) {
 
 func insertRamLog(ram SystemRam) {
 	stmt, err := db.Prepare("INSERT INTO ram_log(total, used, percentage) VALUES(?, ?, ?)")
-	if err != nil { fmt.Println("Error prep RAM:", err); return }
+	if err != nil {
+		fmt.Println("Error prep RAM:", err)
+		return
+	}
 	defer stmt.Close()
 	stmt.Exec(ram.TotalMB, ram.UsedMB, ram.Percentage)
 }
 
 func insertProcessLog(ts time.Time, pid int, name string, ram int, cpu float64) {
 	stmt, err := db.Prepare("INSERT INTO process_log(timestamp, pid, name, ram, cpu) VALUES(?, ?, ?, ?, ?)")
-	if err != nil { fmt.Println("Error prep PROC:", err); return }
+	if err != nil {
+		fmt.Println("Error prep PROC:", err)
+		return
+	}
 	defer stmt.Close()
 	stmt.Exec(ts, pid, name, ram, cpu)
 }
@@ -218,12 +234,16 @@ func insertProcessLog(ts time.Time, pid int, name string, ram int, cpu float64) 
 func getDockerContainers() map[string]string {
 	cmd := exec.Command("docker", "ps", "--format", "{{.ID}}|{{.Names}}|{{.Command}}")
 	output, err := cmd.Output()
-	if err != nil { return nil } // Docker no responde o no hay containers
+	if err != nil {
+		return nil
+	} // Docker no responde o no hay containers
 
 	containers := make(map[string]string)
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		if line == "" { continue }
+		if line == "" {
+			continue
+		}
 		parts := strings.Split(line, "|")
 		if len(parts) >= 3 {
 			id := parts[0]
@@ -238,7 +258,7 @@ func calculateCPU(proc KernelProcess) float64 {
 	currentTotalTime := proc.CpuUtime + proc.CpuStime
 	currentTime := time.Now()
 	stats, exists := history[proc.Pid]
-	
+
 	if !exists {
 		history[proc.Pid] = ProcessStats{Pid: proc.Pid, TotalTime: currentTotalTime, LastSeen: currentTime}
 		return 0.0
@@ -249,14 +269,18 @@ func calculateCPU(proc KernelProcess) float64 {
 
 	history[proc.Pid] = ProcessStats{Pid: proc.Pid, TotalTime: currentTotalTime, LastSeen: currentTime}
 
-	if deltaTime == 0 { return 0.0 }
+	if deltaTime == 0 {
+		return 0.0
+	}
 	return (float64(deltaCpu) / 100.0) / deltaTime * 100
 }
 
 func killContainers(amount int, procs []KernelProcess) {
 	killed := 0
 	for _, proc := range procs {
-		if killed >= amount { break }
+		if killed >= amount {
+			break
+		}
 		fmt.Printf("   💀 Matando PID %d (%s)...\n", proc.Pid, proc.Name)
 		exec.Command("kill", "-9", fmt.Sprintf("%d", proc.Pid)).Run()
 		killed++
