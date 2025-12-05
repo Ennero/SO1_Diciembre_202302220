@@ -170,6 +170,33 @@ Archivo relacionado: `go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 
 **Resultado esperado:** Cada 5 segundos se listan contenedores detectados, RAM, `%CPU` calculado y, en caso de exceso, mensajes de eliminación de procesos sobrantes.
 
+### 6.6. Carpeta Compartida Host↔VM (Virtio-FS)
+
+Para compartir archivos con la VM de forma eficiente (ej. intercambiar `metrics.db`, logs, etc.), se recomienda montar una carpeta del Host usando `virtio-fs`:
+
+1) En el Host (Virt-Manager):
+- VM → "Mostrar detalles del hardware" (ícono bombilla) → "Añadir Hardware" → "Sistema de archivos".
+- Controlador: `virtiofs`.
+- `Source path`: carpeta del Host (ej. `/home/tu_usuario/Compartido`).
+- `Target path`: nombre identificador (ej. `micarpeta`).
+
+2) En la VM (Linux):
+```bash
+sudo mkdir -p /mnt/compartido
+sudo mount -t virtiofs micarpeta /mnt/compartido
+```
+
+Persistencia opcional:
+```bash
+echo 'micarpeta /mnt/compartido virtiofs defaults 0 0' | sudo tee -a /etc/fstab
+sudo mount -a
+```
+
+Alternativa (si `virtio-fs` no está disponible):
+```bash
+sudo mount -t 9p -o trans=virtio,version=9p2000.L micarpeta /mnt/compartido
+```
+
 ## 7. Notas de Seguridad y Mantenimiento
 
 - **Solo lectura en `/proc`:** No habilitar escritura si no hay handlers seguros.

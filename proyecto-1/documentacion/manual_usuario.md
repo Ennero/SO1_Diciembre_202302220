@@ -13,6 +13,7 @@ Guía práctica y amigable para construir imágenes, cargar los módulos de kern
 		- [3 Iniciar Monitor y Base de Datos (Go)](#3-iniciar-monitor-y-base-de-datos-go)
 		- [4 Levantar Grafana](#4-levantar-grafana)
 		- [5 Generar tráfico (contenedores de prueba)](#5-generar-tráfico-contenedores-de-prueba)
+	- [Carpeta Compartida Host↔VM (Virtio-FS)](#carpeta-compartida-hostvm-virtio-fs)
 	- [Solución de Problemas](#solución-de-problemas)
 	- [Limpieza](#limpieza)
 
@@ -122,6 +123,44 @@ chmod +x generator.sh
 El daemon de Go detectará los contenedores creados y aplicará la lógica de eliminación si se exceden los límites definidos.
 
 Archivo relacionado: `bash/generator.sh` — [ver archivo](../bash/generator.sh)
+
+
+## Carpeta Compartida Host↔VM (Virtio-FS)
+
+Este método recomendado permite montar una carpeta de tu PC dentro de la VM como si fuera otro disco. Es rápido y eficiente para uso frecuente.
+
+Pasos en el Host (Virt-Manager):
+- Abre Virtual Machine Manager (`virt-manager`).
+- Abre tu VM y haz clic en el ícono de la bombilla (Detalles de hardware).
+- Haz clic en "Añadir Hardware" → "Sistema de archivos" (Filesystem).
+- Configura:
+	- Controlador (Driver): `virtiofs` (o `virtio-fs`).
+	- Ruta fuente (Source path): carpeta en tu PC (ej. `/home/tu_usuario/Compartido`).
+	- Ruta destino (Target path): nombre identificador (ej. `micarpeta`).
+- Finaliza y enciende la VM.
+
+Pasos dentro de la VM (Linux):
+
+```bash
+# Crear el punto de montaje
+sudo mkdir -p /mnt/compartido
+
+# Montar la carpeta (usa el nombre del Target path configurado)
+sudo mount -t virtiofs micarpeta /mnt/compartido
+```
+
+Opcional (montaje persistente al arranque):
+
+```bash
+echo 'micarpeta /mnt/compartido virtiofs defaults 0 0' | sudo tee -a /etc/fstab
+sudo mount -a
+```
+
+Nota: Si tu entorno no soporta `virtio-fs`, puedes usar 9p como alternativa:
+
+```bash
+sudo mount -t 9p -o trans=virtio,version=9p2000.L micarpeta /mnt/compartido
+```
 
 
 ## Solución de Problemas
