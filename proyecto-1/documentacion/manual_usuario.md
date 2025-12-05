@@ -14,6 +14,7 @@ Guía práctica y amigable para construir imágenes, cargar los módulos de kern
 		- [4 Levantar Grafana](#4-levantar-grafana)
 		- [5 Generar tráfico (contenedores de prueba)](#5-generar-tráfico-contenedores-de-prueba)
 	- [Carpeta Compartida Host↔VM (Virtio-FS)](#carpeta-compartida-hostvm-virtio-fs)
+		- [Migrar el proyecto desde carpeta compartida a Home (100% Linux)](#migrar-el-proyecto-desde-carpeta-compartida-a-home-100-linux)
 	- [Solución de Problemas](#solución-de-problemas)
 	- [Limpieza](#limpieza)
 
@@ -37,6 +38,9 @@ sudo apt install -y build-essential linux-headers-$(uname -r)
 
 # Docker y Docker Compose (usa docker-compose v1)
 sudo apt install -y docker.io docker-compose
+
+# Alternativa: instalar Docker vía Snap (si tu distro lo prefiere)
+sudo snap install docker
 
 # Habilitar y arrancar Docker
 sudo systemctl enable --now docker
@@ -135,7 +139,7 @@ chmod 666 go-daemon/metrics.db
 
 # Levantar stack de Grafana desde el directorio correspondiente
 cd dashboard
-docker-compose up -d
+sudo docker-compose up -d
 ```
 
 Acceder a Grafana en: http://localhost:3000 (Usuario: `admin` / Password: `admin`)
@@ -197,6 +201,27 @@ Nota: Si tu entorno no soporta `virtio-fs`, puedes usar 9p como alternativa:
 
 ```bash
 sudo mount -t 9p -o trans=virtio,version=9p2000.L micarpeta /mnt/compartido
+```
+
+### Migrar el proyecto desde carpeta compartida a Home (100% Linux)
+
+Para evitar problemas de permisos y rendimiento, se recomienda copiar el proyecto desde la carpeta compartida a tu `Home` dentro de la VM y trabajar desde ahí:
+
+```bash
+# 1. Ir a tu carpeta personal (Home)
+cd ~
+
+# 2. Copiar todo el proyecto desde la carpeta compartida hacia aquí
+cp -r /mnt/compartido/proyecto-1 .
+
+# 3. Entrar a la nueva copia (que ya es 100% Linux)
+cd proyecto-1
+
+# 4. Ahora intenta levantar todo desde aquí
+cd dashboard
+touch ../go-daemon/metrics.db
+chmod 666 ../go-daemon/metrics.db
+sudo docker-compose up -d
 ```
 
 

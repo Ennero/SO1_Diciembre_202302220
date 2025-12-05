@@ -25,6 +25,7 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 		- [6.4. Generación de Tráfico](#64-generación-de-tráfico)
 		- [6.5. Iniciar el Monitor (Daemon)](#65-iniciar-el-monitor-daemon)
 		- [6.6. Carpeta Compartida Host↔VM (Virtio-FS)](#66-carpeta-compartida-hostvm-virtio-fs)
+		- [6.7. Levantar Grafana](#67-levantar-grafana)
 	- [7. Notas de Seguridad y Mantenimiento](#7-notas-de-seguridad-y-mantenimiento)
 	- [8. Referencias Rápidas](#8-referencias-rápidas)
 
@@ -130,6 +131,9 @@ sudo apt install -y build-essential linux-headers-$(uname -r)
 
 # Docker y Docker Compose (usa docker-compose v1)
 sudo apt install -y docker.io docker-compose
+
+# Alternativa: instalar Docker vía Snap (si tu entorno lo prefiere)
+sudo snap install docker
 
 # Habilitar y arrancar Docker
 sudo systemctl enable --now docker
@@ -247,6 +251,52 @@ Alternativa (si `virtio-fs` no está disponible):
 ```bash
 sudo mount -t 9p -o trans=virtio,version=9p2000.L micarpeta /mnt/compartido
 ```
+
+### 6.6.1. Migrar proyecto desde carpeta compartida a Home (VM)
+
+Para evitar incompatibilidades de permisos/ACL y mejorar rendimiento de IO, copia el proyecto a tu Home dentro de la VM y trabaja desde ahí:
+
+```bash
+# 1. Ir a tu carpeta personal (Home)
+cd ~
+
+# 2. Copiar todo el proyecto desde la carpeta compartida hacia aquí
+cp -r /mnt/compartido/proyecto-1 .
+
+# 3. Entrar a la nueva copia (nativa de Linux)
+cd proyecto-1
+
+# 4. Levantar Grafana desde la copia
+cd dashboard
+touch ../go-daemon/metrics.db
+chmod 666 ../go-daemon/metrics.db
+sudo docker-compose up -d
+```
+
+### 6.7. Levantar Grafana
+
+Servicio de visualización para consultar los datos guardados por el daemon en `metrics.db`.
+
+```bash
+cd proyecto-1
+
+# Crear archivo DB vacío y permisos adecuados
+touch go-daemon/metrics.db
+chmod 666 go-daemon/metrics.db
+
+# Levantar el stack de Grafana
+cd dashboard
+docker-compose up -d
+```
+
+Accede a Grafana en: `http://localhost:3000` (Usuario: `admin` / Password: `admin`).
+
+El `docker-compose.yml` monta la base `../go-daemon/metrics.db` hacia `/var/lib/grafana/metrics.db`. En Grafana:
+- Añade Data Source tipo "SQLite".
+- Ruta del archivo: `/var/lib/grafana/metrics.db`.
+- Consultas ejemplo:
+	- `SELECT timestamp, percentage FROM ram_log ORDER BY timestamp DESC LIMIT 50;`
+	- `SELECT timestamp, name, ram, cpu FROM process_log ORDER BY timestamp DESC LIMIT 50;`
 
 ## 7. Notas de Seguridad y Mantenimiento
 
