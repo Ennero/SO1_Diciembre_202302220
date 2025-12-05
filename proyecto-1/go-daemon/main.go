@@ -1,23 +1,37 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // --- CONFIGURACIÓN ---
-// Cambia esto por el nombre real de tu archivo en /proc
-const PROC_FILE = "/proc/continfo_so1_202302220" 
-const DESIRED_LOW = 3  // Cantidad deseada de contenedores "Bajo Consumo"
-const DESIRED_HIGH = 2 // Cantidad deseada de contenedores "Alto Consumo"
+// Nombres exactos definidos en tus archivos .c
+const RAM_FILE = "/proc/raminfo_so1_202302220"
+const PROC_FILE = "/proc/sysinfo_so1_202302220" 
+const DB_FILE = "./metrics.db"
+
+const DESIRED_LOW = 3
+const DESIRED_HIGH = 2
 
 // --- ESTRUCTURAS ---
 
-// 1. Estructura para leer el JSON del Kernel
+// Estructura para leer el JSON del Módulo RAM
+type SystemRam struct {
+	TotalMB    int `json:"total_ram_mb"`
+	FreeMB     int `json:"free_ram_mb"`
+	UsedMB     int `json:"used_ram_mb"`
+	Percentage int `json:"percentage"`
+}
+
+// Estructura para leer el JSON del Módulo Procesos
 type KernelProcess struct {
 	Pid      int    `json:"pid"`
 	Name     string `json:"name"`
@@ -28,21 +42,24 @@ type KernelProcess struct {
 	CpuStime uint64 `json:"cpu_stime"`
 }
 
-// 2. Estructura interna para guardar el estado anterior (para calcular CPU)
 type ProcessStats struct {
-	Pid        int
-	TotalTime  uint64 // utime + stime
-	LastSeen   time.Time
+	Pid       int
+	TotalTime uint64
+	LastSeen  time.Time
 }
 
-// Mapa para recordar el historial de cada proceso
 var history = make(map[int]ProcessStats)
+var db *sql.DB
 
 func main() {
-	fmt.Println("--- Iniciando Daemon SO1 ---")
-	fmt.Println("Monitoreando archivo:", PROC_FILE)
+	fmt.Println("--- Iniciando Daemon SO1 (Doble Módulo) ---")
+	
+	initDB()
+	defer db.Close()
 
-	// Ciclo infinito cada 5 segundos
+	fmt.Println("Monitor RAM:", RAM_FILE)
+	fmt.Println("Monitor Procesos:", PROC_FILE)
+
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -53,62 +70,87 @@ func main() {
 	}
 }
 
-func loop() {
-	// 1. Obtener contenedores de Docker (ID y Nombre)
-	// Usamos map para búsqueda rápida: map[NombreContenedor]ContainerID
-	dockerContainers := getDockerContainers()
-	if len(dockerContainers) == 0 {
-		fmt.Println("No se detectaron contenedores Docker corriendo.")
-		return
-	}
-
-	// 2. Leer datos del Kernel
-	kernelProcs, err := readKernelProcs()
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite3", DB_FILE)
 	if err != nil {
-		fmt.Printf("Error leyendo Kernel: %v\n", err)
+		fmt.Println("Error fatal abriendo la BD:", err)
+		os.Exit(1)
+	}
+
+	// Tabla 1: Histórico de RAM Global
+	q1 := `CREATE TABLE IF NOT EXISTS ram_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		total INTEGER,
+		used INTEGER,
+		percentage INTEGER
+	);`
+	db.Exec(q1)
+
+	// Tabla 2: Histórico de Procesos (Contenedores)
+	q2 := `CREATE TABLE IF NOT EXISTS process_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		pid INTEGER,
+		name TEXT,
+		ram INTEGER,
+		cpu REAL
+	);`
+	db.Exec(q2)
+	
+	fmt.Println("Base de datos lista: metrics.db")
+}
+
+func loop() {
+	// --- PARTE A: LEER Y GUARDAR RAM GLOBAL ---
+	ramData, err := readRamModule()
+	if err != nil {
+		fmt.Printf("⚠️ Error leyendo RAM (%s): %v\n", RAM_FILE, err)
+	} else {
+		fmt.Printf("💾 RAM SYSTEM: %d%% Usado (%d/%d MB)\n", ramData.Percentage, ramData.UsedMB, ramData.TotalMB)
+		insertRamLog(ramData)
+	}
+
+	// --- PARTE B: PROCESOS, DOCKER Y THANOS ---
+	dockerContainers := getDockerContainers()
+	
+	kernelProcs, err := readProcessModule()
+	if err != nil {
+		fmt.Printf("⚠️ Error leyendo Procesos (%s): %v\n", PROC_FILE, err)
 		return
 	}
 
-	// 3. Cruzar información: ¿Qué procesos del Kernel son Contenedores?
-	// Contadores
 	countLow := 0
 	countHigh := 0
-	
-	// Listas para decidir a quién matar si sobran
 	var procsLow []KernelProcess
 	var procsHigh []KernelProcess
+	now := time.Now() // Fecha unificada para los registros
 
 	for _, proc := range kernelProcs {
-		// Buscamos si el nombre del proceso coincide con algún contenedor
-		// NOTA: stress-ng suele lanzar procesos hijos, así que filtramos por nombre
-		
 		isHigh := false
 		isLow := false
 
-		// Estrategia simple de detección basada en tus Dockerfiles:
-		// Si el proceso consume mucha RAM (> 50MB) es High
-		// Si consume poca (< 10MB) es Low
-		// (Ajusta estos umbrales según tu VM)
+		// 1. Identificar si es un contenedor nuestro
 		if strings.Contains(proc.Name, "stress") {
-			if proc.RamKB > 50000 { // 50 MB
-				isHigh = true
-			} else {
-				// A veces stress-ng inicia con poca RAM, pero asumiremos High si es stress
-				isHigh = true 
-			}
+			if proc.RamKB > 50000 { isHigh = true } else { isHigh = true }
 		} else if strings.Contains(proc.Name, "sleep") {
 			isLow = true
 		}
 
-		// Si encontramos uno de nuestros contenedores, calculamos CPU y clasificamos
+		// 2. Si es contenedor, procesar
 		if isHigh || isLow {
 			cpuPercent := calculateCPU(proc)
-			
-			// Imprimimos info bonita
+			ramMB := int(proc.RamKB / 1024)
+
 			tipo := "BAJO"
 			if isHigh { tipo = "ALTO" }
-			fmt.Printf(" -> DETECTADO [%s]: PID %d | RAM: %d MB | CPU: %.2f%%\n", 
-				tipo, proc.Pid, proc.RamKB/1024, cpuPercent)
+			
+			fmt.Printf(" -> [%s] PID %d | RAM: %d MB | CPU: %.2f%%\n", 
+				tipo, proc.Pid, ramMB, cpuPercent)
+			
+			// Guardar en BD
+			insertProcessLog(now, proc.Pid, proc.Name, ramMB, cpuPercent)
 
 			if isHigh {
 				countHigh++
@@ -120,46 +162,61 @@ func loop() {
 		}
 	}
 
-	fmt.Printf("\nRESUMEN: Altos: %d (Meta: %d) | Bajos: %d (Meta: %d)\n", 
-		countHigh, DESIRED_HIGH, countLow, DESIRED_LOW)
+	fmt.Printf("RESUMEN CONTENEDORES: Altos: %d | Bajos: %d\n", countHigh, countLow)
 
-	// 4. Lógica de Matanza (Thanos)
-	// Si hay más de la cuenta, matamos al más reciente o al que más consuma.
-	
-	if countHigh > DESIRED_HIGH {
-		diff := countHigh - DESIRED_HIGH
-		fmt.Printf("⚠️ Sobran %d contenedores de ALTO consumo. Eliminando...\n", diff)
-		killContainers(diff, procsHigh, dockerContainers)
-	}
-
-	if countLow > DESIRED_LOW {
-		diff := countLow - DESIRED_LOW
-		fmt.Printf("⚠️ Sobran %d contenedores de BAJO consumo. Eliminando...\n", diff)
-		killContainers(diff, procsLow, dockerContainers)
+	// 3. Lógica Thanos (Solo si Docker funciona y hay exceso)
+	if len(dockerContainers) > 0 {
+		if countHigh > DESIRED_HIGH {
+			fmt.Printf("⚠️ Exceso de ALTOS (%d > %d). Eliminando...\n", countHigh, DESIRED_HIGH)
+			killContainers(countHigh - DESIRED_HIGH, procsHigh)
+		}
+		if countLow > DESIRED_LOW {
+			fmt.Printf("⚠️ Exceso de BAJOS (%d > %d). Eliminando...\n", countLow, DESIRED_LOW)
+			killContainers(countLow - DESIRED_LOW, procsLow)
+		}
 	}
 }
 
-// --- FUNCIONES AUXILIARES ---
+// --- LECTURAS DE ARCHIVOS /PROC ---
 
-func readKernelProcs() ([]KernelProcess, error) {
+func readRamModule() (SystemRam, error) {
+	var stats SystemRam
+	data, err := os.ReadFile(RAM_FILE)
+	if err != nil { return stats, err }
+	err = json.Unmarshal(data, &stats)
+	return stats, err
+}
+
+func readProcessModule() ([]KernelProcess, error) {
 	data, err := os.ReadFile(PROC_FILE)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	var procs []KernelProcess
-	if err := json.Unmarshal(data, &procs); err != nil {
-		return nil, err
-	}
-	return procs, nil
+	err = json.Unmarshal(data, &procs)
+	return procs, err
 }
 
-// Ejecuta "docker ps" para obtener IDs y Nombres reales
+// --- BASES DE DATOS ---
+
+func insertRamLog(ram SystemRam) {
+	stmt, err := db.Prepare("INSERT INTO ram_log(total, used, percentage) VALUES(?, ?, ?)")
+	if err != nil { fmt.Println("Error prep RAM:", err); return }
+	defer stmt.Close()
+	stmt.Exec(ram.TotalMB, ram.UsedMB, ram.Percentage)
+}
+
+func insertProcessLog(ts time.Time, pid int, name string, ram int, cpu float64) {
+	stmt, err := db.Prepare("INSERT INTO process_log(timestamp, pid, name, ram, cpu) VALUES(?, ?, ?, ?, ?)")
+	if err != nil { fmt.Println("Error prep PROC:", err); return }
+	defer stmt.Close()
+	stmt.Exec(ts, pid, name, ram, cpu)
+}
+
+// --- AUXILIARES (Docker, CPU, Kill) ---
+
 func getDockerContainers() map[string]string {
 	cmd := exec.Command("docker", "ps", "--format", "{{.ID}}|{{.Names}}|{{.Command}}")
 	output, err := cmd.Output()
-	if err != nil {
-		return nil
-	}
+	if err != nil { return nil } // Docker no responde o no hay containers
 
 	containers := make(map[string]string)
 	lines := strings.Split(string(output), "\n")
@@ -169,69 +226,37 @@ func getDockerContainers() map[string]string {
 		if len(parts) >= 3 {
 			id := parts[0]
 			name := parts[1]
-			command := parts[2]
-			
-			// Guardamos una referencia.
-			// La clave será útil para identificar qué es qué.
-			if strings.Contains(command, "stress") {
-				containers["stress"] = id // Simplificación
-			} else if strings.Contains(command, "sleep") {
-				containers["sleep"] = id
-			}
-			// Guardamos también por nombre exacto por si acaso
 			containers[name] = id
 		}
 	}
 	return containers
 }
 
-// Calcula el % de CPU comparando con la vez anterior
 func calculateCPU(proc KernelProcess) float64 {
 	currentTotalTime := proc.CpuUtime + proc.CpuStime
 	currentTime := time.Now()
-
 	stats, exists := history[proc.Pid]
 	
-	// Si es la primera vez que lo vemos, no podemos calcular % (necesitamos 2 puntos)
 	if !exists {
-		history[proc.Pid] = ProcessStats{
-			Pid:       proc.Pid,
-			TotalTime: currentTotalTime,
-			LastSeen:  currentTime,
-		}
+		history[proc.Pid] = ProcessStats{Pid: proc.Pid, TotalTime: currentTotalTime, LastSeen: currentTime}
 		return 0.0
 	}
 
-	// Cálculo del Delta
 	deltaCpu := currentTotalTime - stats.TotalTime
-	deltaTime := currentTime.Sub(stats.LastSeen).Seconds() // En segundos
+	deltaTime := currentTime.Sub(stats.LastSeen).Seconds()
 
-	// Actualizamos historial
-	history[proc.Pid] = ProcessStats{
-		Pid:       proc.Pid,
-		TotalTime: currentTotalTime,
-		LastSeen:  currentTime,
-	}
+	history[proc.Pid] = ProcessStats{Pid: proc.Pid, TotalTime: currentTotalTime, LastSeen: currentTime}
 
-	hertz := 100.0 
-	cpuUsage := (float64(deltaCpu) / hertz) / deltaTime * 100
-
-	return cpuUsage
+	if deltaTime == 0 { return 0.0 }
+	return (float64(deltaCpu) / 100.0) / deltaTime * 100
 }
 
-// Mata los contenedores sobrantes
-func killContainers(amount int, procs []KernelProcess, dockerMap map[string]string) {
+func killContainers(amount int, procs []KernelProcess) {
 	killed := 0
 	for _, proc := range procs {
 		if killed >= amount { break }
-		
-		// En Docker, matar el proceso principal dentro del contenedor suele detener el contenedor.
-		fmt.Printf("   Matando proceso PID %d (%s)...\n", proc.Pid, proc.Name)
-		
-		// Opción A: Matar el proceso directamente (Más fácil y efectivo para la práctica)
-		cmd := exec.Command("kill", "-9", fmt.Sprintf("%d", proc.Pid))
-		cmd.Run()
-		
+		fmt.Printf("   💀 Matando PID %d (%s)...\n", proc.Pid, proc.Name)
+		exec.Command("kill", "-9", fmt.Sprintf("%d", proc.Pid)).Run()
 		killed++
 	}
 }
