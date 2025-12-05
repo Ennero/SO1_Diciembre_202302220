@@ -1,10 +1,10 @@
 # SO1_Diciembre_202302220
 
-Proyecto de Sistemas Operativos 1: monitoreo de contenedores con módulo de Kernel (C) y daemon (Go), automatizado con Bash y contenedores Docker.
+Proyecto de Sistemas Operativos 1: monitoreo de contenedores con módulos de Kernel (C) y daemon (Go), automatizado con Bash y contenedores Docker.
 
 ## Contenidos
 
-- `proyecto-1/modulo-kernel/`: módulo de Kernel que expone métricas en `/proc` — [ver carpeta](proyecto-1/modulo-kernel/)
+- `proyecto-1/modulo-kernel/`: módulos de Kernel que expone métricas en `/proc` — [ver carpeta](proyecto-1/modulo-kernel/)
 - `proyecto-1/go-daemon/`: daemon en Go que cruza métricas y gestiona procesos — [ver carpeta](proyecto-1/go-daemon/)
 - `proyecto-1/bash/`: scripts para generar carga — [ver carpeta](proyecto-1/bash/)
 - `proyecto-1/docker-files/`: Dockerfiles para imágenes de prueba — [ver carpeta](proyecto-1/docker-files/)
@@ -25,15 +25,21 @@ docker build -t so1_ram -f docker-files/dockerfile.ram .
 docker build -t so1_cpu -f docker-files/dockerfile.cpu .
 docker build -t so1_low -f docker-files/dockerfile.low .
 
-# Compilar y cargar módulo
-cd modulo-kernel && make && sudo insmod module.ko && cd -
-cat /proc/continfo_so1_202302220
+# Compilar y cargar módulos de kernel
+cd modulo-kernel && make && sudo insmod procesos.ko && sudo insmod ram.ko && cd -
+
+# Verificar entradas /proc
+cat /proc/sysinfo_so1_202302220
+cat /proc/raminfo_so1_202302220
 
 # Generar carga
 cd bash && chmod +x generator.sh && ./generator.sh && cd -
 
-# Ejecutar daemon
+# Ejecutar daemon (desde go-daemon)
 cd go-daemon && sudo env "PATH=$PATH" go run main.go
+
+# Levantar Grafana (desde dashboard)
+cd ../dashboard && docker-compose up -d
 ```
 
 ## Licencia

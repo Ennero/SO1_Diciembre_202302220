@@ -11,4 +11,4 @@ services:
     volumes:
       # Mapeamos el archivo de base de datos dentro del contenedor
       # IMPORTANTE: Asegúrate de que metrics.db ya exista antes de iniciar esto
-      - ./metrics.db:/var/lib/grafana/metrics.db:ro
+      - ../go-daemon/metrics.db:/var/lib/grafana/metrics.db:ro
