@@ -12,16 +12,19 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// Constantes
+// --- CONFIGURACIÓN ---
 const RAM_FILE = "/proc/continfo_so1_202302220"
 const PROC_FILE = "/proc/sysinfo_so1_202302220"
 const DB_FILE = "./metrics.db"
+
+// Ruta relativa al script desde la carpeta go-daemon
+const GENERATOR_SCRIPT = "../bash/generator.sh"
 
 const DESIRED_LOW = 3
 const DESIRED_HIGH = 2
 
 // --- ESTRUCTURAS ---
-// Estructura para leer del Módulo RAM
+
 type SystemRam struct {
 	TotalMB    int `json:"total_ram_mb"`
 	FreeMB     int `json:"free_ram_mb"`
@@ -29,7 +32,6 @@ type SystemRam struct {
 	Percentage int `json:"percentage"`
 }
 
-// Estructura para leer del Módulo Procesos
 type KernelProcess struct {
 	Pid      int    `json:"pid"`
 	Name     string `json:"name"`
@@ -40,7 +42,6 @@ type KernelProcess struct {
 	CpuStime uint64 `json:"cpu_stime"`
 }
 
-// Estructura para mantener historial de CPU
 type ProcessStats struct {
 	Pid       int
 	TotalTime uint64
@@ -51,21 +52,42 @@ var history = make(map[int]ProcessStats)
 var db *sql.DB
 
 func main() {
-	fmt.Println("--- Iniciando Daemon SO1 ---")
+	fmt.Println("--- Iniciando Daemon SO1 (Automático) ---")
 
 	initDB()
 	defer db.Close()
 
 	fmt.Println("Monitor RAM:", RAM_FILE)
 	fmt.Println("Monitor Procesos:", PROC_FILE)
+	fmt.Println("Script Generador:", GENERATOR_SCRIPT)
 
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	// Ticker 1: Monitoreo y "Thanos" (Cada 5 segundos)
+	monitorTicker := time.NewTicker(5 * time.Second)
+	defer monitorTicker.Stop()
 
-	for range ticker.C {
-		fmt.Println("\n------------------------------------------------")
-		fmt.Printf("[%s] Escaneando sistema...\n", time.Now().Format("15:04:05"))
-		loop()
+	// Ticker 2: Generador de Tráfico (Cada 60 segundos)
+	// Ajusta este tiempo si quieres que se creen contenedores más rápido o más lento
+	generatorTicker := time.NewTicker(60 * time.Second)
+	defer generatorTicker.Stop()
+
+	// Ejecutar una carga inicial al arrancar
+	go triggerTraffic()
+
+	// Bucle infinito manejando ambos timers
+	for {
+		select {
+		case <-monitorTicker.C:
+			// Cada 5 seg: Escanear y Matar
+			fmt.Println("\n------------------------------------------------")
+			fmt.Printf("[%s] 🔍 Escaneando sistema...\n", time.Now().Format("15:04:05"))
+			loop()
+
+		case <-generatorTicker.C:
+			// Cada 60 seg: Crear nuevos contenedores
+			fmt.Println("\n------------------------------------------------")
+			fmt.Printf("[%s] 🚀 Generando tráfico automático...\n", time.Now().Format("15:04:05"))
+			go triggerTraffic() // Ejecutar en goroutine para no bloquear el monitor
+		}
 	}
 }
 
@@ -79,42 +101,50 @@ func initDB() {
 
 	os.Chmod(DB_FILE, 0666)
 
-	// Tabla 1: Histórico de RAM Global
-	q1 := `CREATE TABLE IF NOT EXISTS ram_log (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-		total INTEGER,
-		used INTEGER,
-		percentage INTEGER
-	);`
-	db.Exec(q1)
+	// Tablas
+	db.Exec(`CREATE TABLE IF NOT EXISTS ram_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        total INTEGER,
+        used INTEGER,
+        percentage INTEGER
+    );`)
 
-	// Tabla 2: Histórico de Procesos (Contenedores)
-	q2 := `CREATE TABLE IF NOT EXISTS process_log (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-		pid INTEGER,
-		name TEXT,
-		ram INTEGER,
-		cpu REAL
-	);`
-	db.Exec(q2)
+	db.Exec(`CREATE TABLE IF NOT EXISTS process_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        pid INTEGER,
+        name TEXT,
+        ram INTEGER,
+        cpu REAL
+    );`)
 
-	// Tabla 3: Histórico de Asesinatos
-	q3 := `CREATE TABLE IF NOT EXISTS kill_log (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-		pid INTEGER,
-		name TEXT,
-		reason TEXT
-	);`
-	db.Exec(q3)
+	db.Exec(`CREATE TABLE IF NOT EXISTS kill_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        pid INTEGER,
+        name TEXT,
+        reason TEXT
+    );`)
 
 	fmt.Println("Base de datos lista: metrics.db")
 }
 
+// --- NUEVA FUNCIÓN: EJECUTAR BASH SCRIPT ---
+func triggerTraffic() {
+	cmd := exec.Command("/bin/bash", GENERATOR_SCRIPT)
+	// Capturar salida por si hay errores en el script
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("⚠️ Error ejecutando generator.sh: %v\n", err)
+		fmt.Println("Salida:", string(output))
+	} else {
+		fmt.Println("✅ Tráfico generado exitosamente.")
+	}
+}
+
 func loop() {
-	// --- LEER Y GUARDAR RAM GLOBAL ---
+	// --- A. RAM ---
 	ramData, err := readRamModule()
 	if err != nil {
 		fmt.Printf("⚠️ Error leyendo RAM (%s): %v\n", RAM_FILE, err)
@@ -123,7 +153,7 @@ func loop() {
 		insertRamLog(ramData)
 	}
 
-	// --- PROCESOS, DOCKER Y THANOS ---
+	// --- B. PROCESOS ---
 	dockerContainers := getDockerContainers()
 	kernelProcs, err := readProcessModule()
 	if err != nil {
@@ -135,25 +165,22 @@ func loop() {
 	countHigh := 0
 	var procsLow []KernelProcess
 	var procsHigh []KernelProcess
-	now := time.Now() // Fecha unificada para los registros
+	now := time.Now()
 
 	for _, proc := range kernelProcs {
 		isHigh := false
 		isLow := false
 
-		// Detectar tipo de contenedor basado en el nombre
 		if strings.Contains(proc.Name, "stress") {
 			isHigh = true
 		} else if strings.Contains(proc.Name, "sleep") {
 			isLow = true
 		}
 
-		// 2. Si es contenedor, procesar
 		if isHigh || isLow {
 			cpuPercent := calculateCPU(proc)
 			ramMB := int(proc.RamKB / 1024)
 
-			// Guardar métricas para gráficas de "Top Consumo"
 			insertProcessLog(now, proc.Pid, proc.Name, ramMB, cpuPercent)
 
 			tipo := "BAJO"
@@ -172,7 +199,7 @@ func loop() {
 
 	fmt.Printf("RESUMEN: Altos: %d/%d | Bajos: %d/%d\n", countHigh, DESIRED_HIGH, countLow, DESIRED_LOW)
 
-	// Solo matamos si detectamos que Docker está corriendo
+	// --- C. THANOS ---
 	if len(dockerContainers) > 0 {
 		if countHigh > DESIRED_HIGH {
 			fmt.Printf("⚠️ Exceso ALTOS. Eliminando %d...\n", countHigh-DESIRED_HIGH)
@@ -184,6 +211,8 @@ func loop() {
 		}
 	}
 }
+
+// --- BASE DE DATOS ---
 
 func insertRamLog(ram SystemRam) {
 	stmt, _ := db.Prepare("INSERT INTO ram_log(total, used, percentage) VALUES(?, ?, ?)")
@@ -207,7 +236,7 @@ func insertKillLog(pid int, name string, reason string) {
 	stmt.Exec(pid, name, reason)
 }
 
-// --- LOGICA DE NEGOCIO Y SISTEMA ---
+// --- AUXILIARES ---
 
 func killContainers(amount int, procs []KernelProcess, reason string) {
 	killed := 0
@@ -215,15 +244,9 @@ func killContainers(amount int, procs []KernelProcess, reason string) {
 		if killed >= amount {
 			break
 		}
-
 		fmt.Printf("   💀 Matando PID %d (%s)...\n", proc.Pid, proc.Name)
-
-		// 1. Guardar en BD antes de matar
 		insertKillLog(proc.Pid, proc.Name, reason)
-
-		// 2. Ejecutar Kill
 		exec.Command("kill", "-9", fmt.Sprintf("%d", proc.Pid)).Run()
-
 		killed++
 	}
 }
@@ -233,7 +256,7 @@ func readRamModule() (SystemRam, error) {
 	data, err := os.ReadFile(RAM_FILE)
 	if err != nil {
 		return stats, err
-	}
+    }
 	err = json.Unmarshal(data, &stats)
 	return stats, err
 }
@@ -245,7 +268,6 @@ func readProcessModule() ([]KernelProcess, error) {
 	}
 	var procs []KernelProcess
 	err = json.Unmarshal(data, &procs)
-	// El módulo retorna array, parseamos directo
 	return procs, err
 }
 
@@ -285,6 +307,5 @@ func calculateCPU(proc KernelProcess) float64 {
 	if deltaTime == 0 {
 		return 0.0
 	}
-	// Ajuste simple de CPU %
 	return (float64(deltaCpu) / 100.0) / deltaTime * 100
 }

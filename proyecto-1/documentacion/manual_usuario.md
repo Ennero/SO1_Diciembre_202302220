@@ -31,31 +31,38 @@ Guía práctica y amigable para construir imágenes, cargar los módulos de kern
 Instalar todas las dependencias (Ubuntu/Debian)
 
 ```bash
-# Actualizar índices
+# 1. Actualizar índices
 sudo apt update
 
-# Herramientas de compilación y headers
+# 2. Herramientas de compilación y headers (necesario para compilar ciertas dependencias)
 sudo apt install -y build-essential linux-headers-$(uname -r)
 
-# Docker y Docker Compose (usa docker-compose v1)
-sudo apt install -y docker.io docker-compose
+# 3. Docker Engine y Docker Compose V2
+# NOTA: 'docker-compose-plugin' reemplaza al antiguo paquete python 'docker-compose'
+sudo apt install -y docker.io docker-compose-plugin
 
-# Alternativa: instalar Docker vía Snap (si tu distro lo prefiere)
-sudo snap install docker
+# (Comentado para evitar conflictos: No mezcles Snap con Apt. Usa uno u otro)
+# sudo snap install docker
 
-# Habilitar y arrancar Docker
+# 4. Habilitar y arrancar Docker
 sudo systemctl enable --now docker
 
-# (Opcional) Usar Docker sin sudo
+# 5. Configurar Docker sin sudo
+# Esto agrega tu usuario actual al grupo docker
 sudo usermod -aG docker "$USER"
-echo "[INFO] Cierra sesión y vuelve a entrar para aplicar grupo docker"
+echo "[INFO] Recuerda cerrar sesión y volver a entrar para que funcione Docker sin 'sudo'"
 
-# Go (si no lo tienes)
+# 6. Instalar Go
 sudo apt install -y golang
 
-# Verificaciones
+# 7. (Opcional) Crear alias para compatibilidad
+# Esto permite que si escribes 'docker-compose' (viejo), ejecute 'docker compose' (nuevo)
+echo 'alias docker-compose="docker compose"' >> ~/.bashrc
+
+# 8. Verificaciones
+echo "--- Verificando versiones ---"
 docker --version
-docker-compose --version
+docker compose version   # Nota: El comando nuevo es SIN guion
 go version
 ```
 
