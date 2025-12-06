@@ -7,7 +7,9 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -64,6 +66,9 @@ func main() {
 
 	// 2. Levantar Grafana
 	startGrafanaService()
+
+	// 2.5 Manejar señales para limpiar cron al salir
+	setupSignalHandler()
 
 	// 3. Configurar Timers
 	// Aumentamos ligeramente el ticker de monitoreo para dar tiempo al cálculo de CPU
@@ -421,4 +426,46 @@ func calculateCPU(proc KernelProcess) float64 {
 	}
 
 	return cpuUsage
+}
+
+// handleSignals sets up signal handlers to gracefully shutdown the application.
+// It listens for SIGINT (Ctrl+C) and SIGTERM signals in a separate goroutine.
+// When either signal is received, it prints a termination message and exits the process.
+// This function should be called during application initialization to ensure
+// proper signal handling throughout the program's lifetime.
+func handleSignals() {
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-signalChan
+		fmt.Println("\n🔔 Señal de terminación recibida. Deteniendo sistema...")
+		// Aquí puedes agregar lógica de limpieza si es necesario
+		os.Exit(0)
+	}()
+}
+
+func setupSignalHandler() {
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-stop
+		fmt.Println("\n🧹 Limpiando cronjob de generator.sh antes de salir...")
+
+		// Eliminamos cualquier línea de la crontab que contenga 'bash/generator.sh'
+		// Esto asume que el cron está definido para el mismo usuario que ejecuta el daemon.
+		cmd := exec.Command("bash", "-c",
+			`crontab -l 2>/dev/null | grep -v 'bash/generator.sh' | crontab -`)
+
+		if err := cmd.Run(); err != nil {
+			fmt.Println("⚠️ Error eliminando cronjob de generator.sh:", err)
+		} else {
+			fmt.Println("✅ Cronjob de generator.sh limpiado (si existía).")
+		}
+
+		// Aquí puedes limpiar otras cosas si quieres (ej. parar contenedores, etc.)
+
+		os.Exit(0)
+	}()
 }
