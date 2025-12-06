@@ -184,8 +184,8 @@ Configuración rápida en Grafana:
 
 ```sql
 SELECT 
-	timestamp,
-	percentage AS "Uso RAM %"
+    strftime('%s', timestamp) as time,
+    percentage AS "Uso RAM %"
 FROM ram_log 
 ORDER BY timestamp ASC;
 ```
@@ -216,10 +216,10 @@ SELECT COUNT(*) AS "Total Eliminados" FROM kill_log;
 
 ```sql
 SELECT 
-	timestamp AS "Fecha/Hora", 
-	pid AS "PID", 
-	name AS "Nombre Contenedor", 
-	reason AS "Razón"
+    strftime('%s', timestamp) * 1000 AS time,
+    pid AS "PID", 
+    name AS "Nombre Contenedor", 
+    reason AS "Razón"
 FROM kill_log 
 ORDER BY timestamp DESC;
 ```
@@ -258,11 +258,11 @@ LIMIT 5;
 
 ```sql
 SELECT 
-	timestamp, 
-	pid, 
-	name, 
-	ram AS "RAM (MB)", 
-	cpu AS "CPU (%)"
+    strftime('%s', timestamp) * 1000 AS time,
+    pid, 
+    name, 
+    ram AS "RAM (MB)", 
+    cpu AS "CPU (%)"
 FROM process_log 
 ORDER BY timestamp DESC 
 LIMIT 10;
@@ -274,11 +274,11 @@ LIMIT 10;
 
 ```sql
 SELECT 
-	timestamp,
-	cpu,
-	name || '_' || pid AS metric
+    strftime('%s', timestamp) AS time,
+    cpu,
+    name || '_' || pid AS metric
 FROM process_log
-WHERE timestamp > datetime('now', '-2 minutes')
+WHERE timestamp > datetime('now', '-10 minutes')
 ORDER BY timestamp ASC;
 ```
 

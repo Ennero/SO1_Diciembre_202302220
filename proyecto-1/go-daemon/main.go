@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -52,42 +53,40 @@ var history = make(map[int]ProcessStats)
 var db *sql.DB
 
 func main() {
-	fmt.Println("--- Iniciando Daemon SO1 (Modo Nativo) ---")
+	fmt.Println("--- Iniciando Daemon SO1 (Versión Optimizada) ---")
 
-	// 1. Inicializar BD (Vital hacerlo antes de Docker)
+	// 1. Inicializar BD
 	initDB()
 	defer db.Close()
 
 	fmt.Println("Monitor RAM:", RAM_FILE)
 	fmt.Println("Monitor Procesos:", PROC_FILE)
 
-	// 2. Levantar Grafana (Modo Directo sin Compose)
+	// 2. Levantar Grafana
 	startGrafanaService()
 
 	// 3. Configurar Timers
+	// Aumentamos ligeramente el ticker de monitoreo para dar tiempo al cálculo de CPU
 	monitorTicker := time.NewTicker(5 * time.Second)
 	defer monitorTicker.Stop()
 
-	// Generador de tráfico (Cada 60s)
+	// Generador de tráfico
 	generatorTicker := time.NewTicker(60 * time.Second)
 	defer generatorTicker.Stop()
 
-	// Carga inicial de tráfico
+	// Carga inicial
 	go triggerTraffic()
 
 	fmt.Println("✅ Sistema corriendo. Presiona Ctrl+C para detener.")
 
-	// Bucle principal
 	for {
 		select {
 		case <-monitorTicker.C:
-			// Cada 5 seg: Escanear y Matar
 			fmt.Println("\n------------------------------------------------")
 			fmt.Printf("[%s] 🔍 Escaneando sistema...\n", time.Now().Format("15:04:05"))
 			loop()
 
 		case <-generatorTicker.C:
-			// Cada 60 seg: Crear nuevos contenedores
 			fmt.Println("\n------------------------------------------------")
 			fmt.Printf("[%s] 🚀 Generando tráfico automático...\n", time.Now().Format("15:04:05"))
 			go triggerTraffic()
@@ -103,7 +102,6 @@ func initDB() {
 		os.Exit(1)
 	}
 
-	// Permisos vitales para que Grafana pueda leer el archivo
 	os.Chmod(DB_FILE, 0666)
 
 	// Tablas
@@ -135,26 +133,18 @@ func initDB() {
 	fmt.Println("✅ Base de datos lista: metrics.db")
 }
 
-// --- FUNCIÓN REESCRITA: LEVANTAR GRAFANA DIRECTAMENTE ---
 func startGrafanaService() {
-	fmt.Println("🐳 Levantando Grafana via 'docker run' (Bypassing Compose)...")
+	fmt.Println("🐳 Levantando Grafana via 'docker run'...")
 
-	// 1. Obtener ruta absoluta actual para montar el volumen correctamente
 	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Println("⚠️ Error obteniendo directorio actual, Grafana podría fallar:", err)
+		fmt.Println("⚠️ Error obteniendo directorio actual:", err)
 		return
 	}
-	
-	// Ruta absoluta a metrics.db
 	dbPath := fmt.Sprintf("%s/metrics.db", cwd)
 
-	// 2. Limpieza preventiva: Borrar contenedor viejo si existe
-	// Ignoramos el error porque si no existe, fallará y no importa.
 	exec.Command("docker", "rm", "-f", "grafana_so1").Run()
 
-	// 3. Ejecutar comando Docker Run Gigante
-	// docker run -d --name grafana_so1 -p 3000:3000 -e ... -v ... grafana/grafana:latest
 	cmd := exec.Command("docker", "run", "-d",
 		"--name", "grafana_so1",
 		"-p", "3000:3000",
@@ -165,25 +155,21 @@ func startGrafanaService() {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("❌ Error crítico levantando Grafana: %v\n", err)
-		fmt.Println("Salida:", string(output))
+		fmt.Printf("❌ Error levantando Grafana: %v\n", err)
 	} else {
-		// Cortamos el ID del contenedor para que se vea limpio
 		containerID := strings.TrimSpace(string(output))
 		if len(containerID) > 12 {
 			containerID = containerID[:12]
 		}
-		fmt.Printf("✅ Grafana iniciado (ID: %s). Accede en http://localhost:3000\n", containerID)
+		fmt.Printf("✅ Grafana iniciado (ID: %s). http://localhost:3000\n", containerID)
 	}
 }
 
 func triggerTraffic() {
-	// Aseguramos ruta absoluta o relativa correcta
 	cmd := exec.Command("/bin/bash", GENERATOR_SCRIPT)
-	output, err := cmd.CombinedOutput()
+	_, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("⚠️ Error ejecutando generator.sh: %v\n", err)
-		fmt.Println("Salida:", string(output))
 	} else {
 		fmt.Println("✅ Tráfico generado exitosamente.")
 	}
@@ -192,7 +178,7 @@ func triggerTraffic() {
 func loop() {
 	ramData, err := readRamModule()
 	if err != nil {
-		fmt.Printf("⚠️ Error leyendo RAM (%s): %v\n", RAM_FILE, err)
+		fmt.Printf("⚠️ Error leyendo RAM: %v\n", err)
 	} else {
 		fmt.Printf("💾 RAM SYSTEM: %d%% Usado (%d/%d MB)\n", ramData.Percentage, ramData.UsedMB, ramData.TotalMB)
 		insertRamLog(ramData)
@@ -201,56 +187,72 @@ func loop() {
 	dockerContainers := getDockerContainers()
 	kernelProcs, err := readProcessModule()
 	if err != nil {
-		fmt.Printf("⚠️ Error leyendo Procesos (%s): %v\n", PROC_FILE, err)
+		fmt.Printf("⚠️ Error leyendo Procesos: %v\n", err)
 		return
 	}
 
 	countLow := 0
 	countHigh := 0
+
+	// Listas para candidatos a matar
 	var procsLow []KernelProcess
 	var procsHigh []KernelProcess
+
 	now := time.Now()
 
 	for _, proc := range kernelProcs {
-		isHigh := false
-		isLow := false
+		isHighFamily := strings.Contains(proc.Name, "stress")
+		isLowFamily := strings.Contains(proc.Name, "sleep")
 
-		if strings.Contains(proc.Name, "stress") {
-			isHigh = true
-		} else if strings.Contains(proc.Name, "sleep") {
-			isLow = true
-		}
-
-		if isHigh || isLow {
+		if isHighFamily || isLowFamily {
 			cpuPercent := calculateCPU(proc)
 			ramMB := int(proc.RamKB / 1024)
 
+			// Logueamos TODOS los procesos (padres e hijos) en la DB para las gráficas
 			insertProcessLog(now, proc.Pid, proc.Name, ramMB, cpuPercent)
 
 			tipo := "BAJO"
-			if isHigh {
+			if isHighFamily {
 				tipo = "ALTO"
-				countHigh++
+
+				// --- CORRECCIÓN DE CONTEO ---
+				// Solo contamos como "Contenedor" al proceso padre "stress-ng".
+				// Ignoramos "stress-ng-cpu", "stress-ng-vm" para la suma,
+				// pero los agregamos a la lista de 'procsHigh' por si hay que matar el PID.
+				if proc.Name == "stress-ng" {
+					countHigh++
+				}
 				procsHigh = append(procsHigh, proc)
+
 			} else {
-				countLow++
+				// Para sleep, asumimos que no hay hijos complejos
+				if proc.Name == "sleep" {
+					countLow++
+				}
 				procsLow = append(procsLow, proc)
 			}
 
-			fmt.Printf(" -> [%s] PID %d | RAM: %d MB | CPU: %.2f%%\n", tipo, proc.Pid, ramMB, cpuPercent)
+			// Solo imprimimos en consola si tiene consumo relevante o es padre, para no ensuciar el log
+			if cpuPercent > 0.1 || proc.Name == "stress-ng" || proc.Name == "sleep" {
+				fmt.Printf(" -> [%s] PID %d (%s) | RAM: %d MB | CPU: %.2f%%\n", tipo, proc.Pid, proc.Name, ramMB, cpuPercent)
+			}
 		}
 	}
 
-	fmt.Printf("RESUMEN: Altos: %d/%d | Bajos: %d/%d\n", countHigh, DESIRED_HIGH, countLow, DESIRED_LOW)
+	fmt.Printf("RESUMEN CONTENEDORES: Altos: %d/%d | Bajos: %d/%d\n", countHigh, DESIRED_HIGH, countLow, DESIRED_LOW)
 
+	// Solo ejecutamos lógica de matanza si Docker está activo
 	if len(dockerContainers) > 0 {
 		if countHigh > DESIRED_HIGH {
-			fmt.Printf("⚠️ Exceso ALTOS. Eliminando %d...\n", countHigh-DESIRED_HIGH)
-			killContainers(countHigh-DESIRED_HIGH, procsHigh, "EXCESO_ALTO")
+			diff := countHigh - DESIRED_HIGH
+			fmt.Printf("⚠️ Exceso ALTOS (%d detectados). Eliminando %d...\n", countHigh, diff)
+			// Priorizamos matar procesos padres ("stress-ng") primero
+			killContainers(diff, procsHigh, "EXCESO_ALTO", "stress-ng")
 		}
 		if countLow > DESIRED_LOW {
-			fmt.Printf("⚠️ Exceso BAJOS. Eliminando %d...\n", countLow-DESIRED_LOW)
-			killContainers(countLow-DESIRED_LOW, procsLow, "EXCESO_BAJO")
+			diff := countLow - DESIRED_LOW
+			fmt.Printf("⚠️ Exceso BAJOS (%d detectados). Eliminando %d...\n", countLow, diff)
+			killContainers(diff, procsLow, "EXCESO_BAJO", "sleep")
 		}
 	}
 }
@@ -281,16 +283,36 @@ func insertKillLog(pid int, name string, reason string) {
 
 // --- AUXILIARES ---
 
-func killContainers(amount int, procs []KernelProcess, reason string) {
+// Se añade filtro 'targetName' para intentar matar primero a los padres
+func killContainers(amount int, procs []KernelProcess, reason string, targetName string) {
 	killed := 0
+
+	// Pasada 1: Matar coincidencias exactas (Padres)
 	for _, proc := range procs {
 		if killed >= amount {
-			break
+			return
 		}
-		fmt.Printf("   💀 Matando PID %d (%s)...\n", proc.Pid, proc.Name)
-		insertKillLog(proc.Pid, proc.Name, reason)
-		exec.Command("kill", "-9", fmt.Sprintf("%d", proc.Pid)).Run()
-		killed++
+		if proc.Name == targetName {
+			fmt.Printf("   💀 Matando PID %d (%s)...\n", proc.Pid, proc.Name)
+			insertKillLog(proc.Pid, proc.Name, reason)
+			exec.Command("kill", "-9", fmt.Sprintf("%d", proc.Pid)).Run()
+			killed++
+		}
+	}
+
+	// Pasada 2: Si aun falta por matar, matar cualquier cosa de la lista (Hijos huérfanos)
+	for _, proc := range procs {
+		if killed >= amount {
+			return
+		}
+		// Verificar si el proceso sigue vivo antes de intentar matarlo de nuevo es complejo en Go simple,
+		// así que simplemente intentamos matar si no coincide con targetName (ya que esos ya murieron o no estaban)
+		if proc.Name != targetName {
+			fmt.Printf("   💀 Matando PID %d (%s) [Limpieza]...\n", proc.Pid, proc.Name)
+			insertKillLog(proc.Pid, proc.Name, reason)
+			exec.Command("kill", "-9", fmt.Sprintf("%d", proc.Pid)).Run()
+			killed++
+		}
 	}
 }
 
@@ -336,19 +358,44 @@ func getDockerContainers() map[string]string {
 func calculateCPU(proc KernelProcess) float64 {
 	currentTotalTime := proc.CpuUtime + proc.CpuStime
 	currentTime := time.Now()
-	stats, exists := history[proc.Pid]
 
+	stats, exists := history[proc.Pid]
 	if !exists {
-		history[proc.Pid] = ProcessStats{Pid: proc.Pid, TotalTime: currentTotalTime, LastSeen: currentTime}
+		history[proc.Pid] = ProcessStats{
+			Pid:       proc.Pid,
+			TotalTime: currentTotalTime,
+			LastSeen:  currentTime,
+		}
 		return 0.0
 	}
 
 	deltaCpu := currentTotalTime - stats.TotalTime
-	deltaTime := currentTime.Sub(stats.LastSeen).Seconds()
-	history[proc.Pid] = ProcessStats{Pid: proc.Pid, TotalTime: currentTotalTime, LastSeen: currentTime}
+	deltaTime := currentTime.Sub(stats.LastSeen)
 
-	if deltaTime == 0 {
+	history[proc.Pid] = ProcessStats{
+		Pid:       proc.Pid,
+		TotalTime: currentTotalTime,
+		LastSeen:  currentTime,
+	}
+
+	// Evitar divisiones raras
+	if deltaTime <= 0 || deltaCpu == 0 {
 		return 0.0
 	}
-	return (float64(deltaCpu) / 100.0) / deltaTime * 100
+
+	// Suponemos que el módulo da tiempo en nanosegundos totales de CPU.
+	// CPU% = (cpu_time_interval / real_interval) * 100
+	cpuUsage := (float64(deltaCpu) / float64(deltaTime.Nanoseconds())) * 100.0
+
+	// Filtrar valores absurdos por errores de medición o reinicios
+	if cpuUsage < 0 || math.IsNaN(cpuUsage) || math.IsInf(cpuUsage, 0) {
+		return 0.0
+	}
+	if cpuUsage > 400.0 {
+		// En un contenedor típico difícilmente tendrás >4 cores dedicados;
+		// si tu máquina tiene más y quieres ver >400%, sube este límite.
+		cpuUsage = 400.0
+	}
+
+	return cpuUsage
 }
