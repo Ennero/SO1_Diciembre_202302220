@@ -13,6 +13,7 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 	- [3. Daemon (Go)](#3-daemon-go)
 		- [3.1. Cálculo de %CPU](#31-cálculo-de-cpu)
 		- [3.2. Política de control](#32-política-de-control)
+		- [3.3. Automatizaciones y limpieza](#33-automatizaciones-y-limpieza)
 	- [4. Automatización (Bash)](#4-automatización-bash)
 	- [5. Decisiones de Diseño y Problemas Encontrados](#5-decisiones-de-diseño-y-problemas-encontrados)
 		- [Problema 1: Incompatibilidad de `task->state`](#problema-1-incompatibilidad-de-task-state)
@@ -32,8 +33,8 @@ Sistema de monitoreo de contenedores que integra un módulo de Kernel en C y un 
 
 ## 1. Arquitectura del Sistema
 
-- **Espacio de Kernel (C):** Módulo que recorre procesos (`task_struct`) y expone métricas en un archivo virtual en `/proc` en formato JSON.
-- **Espacio de Usuario (Go):** Daemon que lee el JSON del kernel, obtiene contenedores desde Docker, calcula %CPU por diferencia y aplica política de control (matar excedentes).
+- **Espacio de Kernel (C):** Módulos `procesos.ko` y `ram.ko` exponen métricas en `/proc/sysinfo_so1_202302220` (procesos) y `/proc/continfo_so1_202302220` (RAM) en JSON.
+- **Espacio de Usuario (Go):** Daemon lee ambos `/proc`, calcula %CPU por diferencia, registra en SQLite (`metrics.db`), levanta Grafana con volúmenes persistentes y aplica política de control sobre contenedores/procesos stress/sleep.
 
 ## 2. Módulo de Kernel (C)
 
@@ -77,25 +78,29 @@ Cada entrada del arreglo JSON tiene la forma:
 
 ### 3.1. Cálculo de %CPU
 
+Se calcula por diferencia, asumiendo que `cpu_utime` + `cpu_stime` están en nanosegundos acumulados:
+
 $$
-\%\,CPU = \frac{\Delta(utime + stime)}{\Delta t \times HZ} \times 100
+\%\,CPU = \frac{\Delta(utime + stime)}{\Delta t_{real}} \times 100
 $$
 
-- `Δ(utime + stime)`: Diferencia de ticks de CPU entre lecturas.
-- `Δt`: Tiempo real entre lecturas (segundos).
-- `HZ`: Ticks por segundo del sistema (en la práctica del daemon se usa `HZ = 100`).
-
-Nota: `HZ` puede variar según la distro (p. ej., 100, 250, 1000). Para mayor precisión, puede leerse en tiempo de ejecución usando `getconf CLK_TCK` y ajustar el cálculo en el daemon.
+Implementación: `(deltaCpu / deltaTime.Nanoseconds()) * 100`. Se filtran valores <0, NaN/Inf y se capea en 400% para evitar outliers. El daemon guarda un historial por PID para el cálculo incremental.
 
 ### 3.2. Política de control 
 
 - **Constantes:** `DESIRED_HIGH = 2`, `DESIRED_LOW = 3`.
-- **Acción:** Si hay más procesos de los deseados en cada categoría, se eliminan los sobrantes con `kill -9 <PID>`.
+- **Clasificación:** Procesos cuyo nombre contiene `stress` → ALTO; contienen `sleep` → BAJO. Para “altos” solo se cuenta como contenedor el padre `stress-ng`; los hijos (`stress-ng-cpu`, `stress-ng-vm`) se loguean y pueden ser eliminados si sobra.
+- **Acción:** Si exceden los deseados, se mata primero al padre objetivo (`stress-ng` para altos, `sleep` para bajos) y luego hijos huérfanos si aún falta por ajustar. Se registran muertes en `kill_log`.
+
+### 3.3. Automatizaciones y limpieza
+
+- **Generador de tráfico:** `generator.sh` se ejecuta cada 60s desde el daemon (goroutine) para crear contenedores de prueba.
+- **Manejo de señales:** `setupSignalHandler` captura `SIGINT`/`SIGTERM`; al salir limpia la crontab removiendo cualquier línea que contenga `bash/generator.sh`.
 
 ## 4. Automatización (Bash)
 
 - **Ubicación:** `proyecto-1/bash/generator.sh` — [ver archivo](../bash/generator.sh)
-- **Función:** Estresar el sistema para pruebas creando 10 contenedores aleatorios basados en las imágenes `so1_ram`, `so1_cpu`, `so1_low`. Nombres únicos para facilitar rastreo.
+- **Función:** Estresar el sistema para pruebas creando 10 contenedores aleatorios basados en las imágenes `so1_ram`, `so1_cpu`, `so1_low`. Nombres únicos para facilitar rastreo. El daemon lo invoca automáticamente cada 60s y limpia la crontab al salir.
 
 ## 5. Decisiones de Diseño y Problemas Encontrados
 
@@ -166,15 +171,13 @@ sudo systemctl status docker
 
 ### 6.2. Construcción de Imágenes Docker
 
-
-
 Ejecute desde la raíz del repo o entrando a `proyecto-1`:
 
 ```bash
 cd proyecto-1
-sudo docker build -t so1_ram -f docker-files/dockerfile.ram .
-sudo docker build -t so1_cpu -f docker-files/dockerfile.cpu .
-sudo docker build -t so1_low -f docker-files/dockerfile.low .
+docker build -t so1_ram -f docker-files/dockerfile.ram .
+docker build -t so1_cpu -f docker-files/dockerfile.cpu .
+docker build -t so1_low -f docker-files/dockerfile.low .
 ```
 
 Archivos Dockerfiles:
@@ -224,7 +227,13 @@ sudo env "PATH=$PATH" go run main.go
 
 Archivo relacionado: `go-daemon/main.go` — [ver archivo](../go-daemon/main.go)
 
-**Resultado esperado:** Cada 5 segundos se listan contenedores detectados, RAM, `%CPU` calculado y, en caso de exceso, mensajes de eliminación de procesos sobrantes.
+**Resultado esperado:**
+- Cada 5 segundos: RAM, procesos stress/sleep, %CPU (por diferencia), conteo y posibles kills.
+- Cada 60 segundos: se ejecuta `generator.sh` para generar carga.
+- Grafana se levanta automáticamente vía `docker run` con volúmenes:
+	- `go-daemon/metrics.db` → `/var/lib/grafana/metrics.db` (ro)
+	- `dashboard/grafana_data` → `/var/lib/grafana` (rw, persistente)
+- Al recibir `Ctrl+C`/`SIGTERM`: limpia entradas de crontab que invoquen `bash/generator.sh`.
 
 ### 6.6. Carpeta Compartida Host↔VM (Virtio-FS)
 
@@ -271,26 +280,23 @@ cd proyecto-1
 
 ### 6.7. Levantar Grafana
 
-Servicio de visualización para consultar los datos guardados por el daemon en `metrics.db`.
+El daemon ya levanta Grafana con `docker run` y volúmenes persistentes. Preparación mínima:
 
 ```bash
 cd proyecto-1
-
-# Crear archivo DB vacío y permisos adecuados
 touch go-daemon/metrics.db
 chmod 666 go-daemon/metrics.db
-
-# Levantar el stack de Grafana
-cd dashboard
-docker-compose up -d
+mkdir -p dashboard/grafana_data && chmod 777 dashboard/grafana_data
+# Luego ejecutar el daemon (6.5). Grafana quedará arriba en :3000
 ```
 
-Accede a Grafana en: `http://localhost:3000` (Usuario: `admin` / Password: `admin`).
+Acceso: `http://localhost:3000` (Usuario: `admin` / Password: `admin`).
 
-El `docker-compose.yml` monta la base `../go-daemon/metrics.db` hacia `/var/lib/grafana/metrics.db`. En Grafana:
-- Añade Data Source tipo "SQLite".
-- Ruta del archivo: `/var/lib/grafana/metrics.db`.
-- Consultas para Dashboard (8 vistas):
+Persistencia: dashboards, datasources, usuarios en `dashboard/grafana_data`; métricas en `go-daemon/metrics.db` montada de solo lectura.
+
+¿Usar docker-compose? Sigue soportado (`dashboard/docker-compose.yml`) y usa los mismos volúmenes.
+
+Consultas para Dashboard (8 vistas):
 
 1) Monitor de RAM en Tiempo Real (Dientes de Sierra) — Time Series
 

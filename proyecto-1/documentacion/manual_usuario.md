@@ -153,7 +153,7 @@ sudo env "PATH=$PATH" go run main.go
 
 ### 4 Levantar Grafana
 
-En una nueva terminal, levantamos el servicio de visualización.
+Grafana se levanta automáticamente desde el daemon con `docker run` y persiste sus dashboards en `dashboard/grafana_data`. Solo necesitas asegurarte de que existan el archivo de base y la carpeta de datos:
 
 ```bash
 cd proyecto-1
@@ -162,18 +162,29 @@ cd proyecto-1
 touch go-daemon/metrics.db
 chmod 666 go-daemon/metrics.db
 
-# Levantar stack de Grafana desde el directorio correspondiente
+# (Opcional) crear carpeta de datos persistentes usada por el daemon
+mkdir -p dashboard/grafana_data
+chmod 777 dashboard/grafana_data
+
+# Luego ejecuta el daemon (sección 3) y Grafana quedará arriba en http://localhost:3000
+```
+
+Acceder a Grafana: http://localhost:3000 (Usuario: `admin` / Password: `admin`).
+
+Persistencia: dashboards, data sources y usuarios viven en `dashboard/grafana_data` (montado en `/var/lib/grafana`). La base `metrics.db` se monta de solo lectura en `/var/lib/grafana/metrics.db`.
+
+¿Prefieres `docker-compose`? Desde `dashboard/` sigue funcionando:
+
+```bash
+cd proyecto-1
+touch go-daemon/metrics.db && chmod 666 go-daemon/metrics.db
 cd dashboard
 sudo docker-compose up -d
 ```
 
-Acceder a Grafana en: http://localhost:3000 (Usuario: `admin` / Password: `admin`)
-
-Nota: el `docker-compose.yml` monta la base desde `../go-daemon/metrics.db` hacia `/var/lib/grafana/metrics.db` en modo lectura. Asegúrate de crear el archivo en `proyecto-1/go-daemon/metrics.db` antes de `docker-compose up -d`.
-
 Configuración rápida en Grafana:
-- Añade un Data Source de tipo "SQLite" (el plugin ya se instala automáticamente).
-- Ruta del archivo: `/var/lib/grafana/metrics.db` (montado en el contenedor).
+- Añade un Data Source de tipo "SQLite" (plugin `frser-sqlite-datasource` se instala solo).
+- Ruta del archivo: `/var/lib/grafana/metrics.db`.
 - Guarda y prueba. Ejemplos de consultas:
 
 #### Las 8 Consultas para Grafana (Dashboard)
@@ -210,7 +221,7 @@ LIMIT 1;
 SELECT COUNT(*) AS "Total Eliminados" FROM kill_log;
 ```
 
-4) Historial de Eliminaciones (Log de Muertes)
+4) Total de Contenedores Eliminados en el tiempo (Log de Muertes)
 - Visualización: Table
 - Qué muestra: Quién se mató, cuándo y por qué.
 
@@ -238,18 +249,12 @@ ORDER BY "Max CPU %" DESC
 LIMIT 5;
 ```
 
-6) Top Contenedores por Consumo de RAM (Histórico)
-- Visualización: Bar Gauge
-- Qué muestra: Máximo RAM MB por contenedor.
+6) Total de RAM
+- Visualización: Gauge
+- Qué muestra: Máximo RAM en MB.
 
 ```sql
-SELECT 
-	name || ' (' || pid || ')' AS Container, 
-	MAX(ram) AS "Max RAM MB"
-FROM process_log 
-GROUP BY pid, name
-ORDER BY "Max RAM MB" DESC 
-LIMIT 5;
+SELECT total FROM ram_log ORDER BY id DESC LIMIT 1;
 ```
 
 7) Tabla de Procesos en Ejecución (Snapshot Actual)
@@ -295,6 +300,8 @@ chmod +x generator.sh
 ```
 
 El daemon de Go detectará los contenedores creados y aplicará la lógica de eliminación si se exceden los límites definidos.
+
+Nota: el daemon también lanza `generator.sh` automáticamente cada 60s y, al terminar con `Ctrl+C`, limpia de la crontab cualquier línea que contenga `bash/generator.sh`.
 
 Archivo relacionado: `bash/generator.sh` — [ver archivo](../bash/generator.sh)
 
