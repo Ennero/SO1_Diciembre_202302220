@@ -85,9 +85,9 @@ Si prefieres automatizar todo (montaje de carpeta compartida, migración a Home,
 
 ```bash
 # Desde la raíz del repositorio
-cd proyecto-1/bash
+cd bash
 chmod +x setup_all.sh
-./setup_all.sh
+sudo ./setup_all.sh
 ```
 
 Notas:

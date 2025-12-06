@@ -19,7 +19,6 @@ const DB_FILE = "./metrics.db"
 
 // Rutas relativas desde la carpeta go-daemon
 const GENERATOR_SCRIPT = "../bash/generator.sh"
-const GRAFANA_COMPOSE = "../dashboard/docker-compose.yml"
 
 const DESIRED_LOW = 3
 const DESIRED_HIGH = 2
@@ -53,7 +52,7 @@ var history = make(map[int]ProcessStats)
 var db *sql.DB
 
 func main() {
-	fmt.Println("--- Iniciando Daemon SO1 (Full Automático) ---")
+	fmt.Println("--- Iniciando Daemon SO1 (Modo Nativo) ---")
 
 	// 1. Inicializar BD (Vital hacerlo antes de Docker)
 	initDB()
@@ -62,7 +61,7 @@ func main() {
 	fmt.Println("Monitor RAM:", RAM_FILE)
 	fmt.Println("Monitor Procesos:", PROC_FILE)
 
-	// 2. Levantar Grafana Automáticamente
+	// 2. Levantar Grafana (Modo Directo sin Compose)
 	startGrafanaService()
 
 	// 3. Configurar Timers
@@ -136,34 +135,50 @@ func initDB() {
 	fmt.Println("✅ Base de datos lista: metrics.db")
 }
 
-// --- FUNCIÓN NUEVA: LEVANTAR GRAFANA ---
+// --- FUNCIÓN REESCRITA: LEVANTAR GRAFANA DIRECTAMENTE ---
 func startGrafanaService() {
-	fmt.Println("🐳 Intentando levantar Grafana con Docker Compose...")
+	fmt.Println("🐳 Levantando Grafana via 'docker run' (Bypassing Compose)...")
 
-	// Usamos la ruta relativa definida en la constante
-	cmd := exec.Command("docker-compose", "-f", GRAFANA_COMPOSE, "up", "-d")
-	
-	output, err := cmd.CombinedOutput()
+	// 1. Obtener ruta absoluta actual para montar el volumen correctamente
+	cwd, err := os.Getwd()
 	if err != nil {
-		// Si falla docker-compose, intentamos con "docker compose" (versión nueva)
-		fmt.Println("⚠️ 'docker-compose' falló, intentando 'docker compose'...")
-		cmd = exec.Command("docker", "compose", "-f", GRAFANA_COMPOSE, "up", "-d")
-		output, err = cmd.CombinedOutput() // Aquí reasignamos output
-		if err != nil {
-			fmt.Printf("❌ Error crítico levantando Grafana: %v\n", err)
-			fmt.Println("Salida:", string(output)) // Aquí sí se usaba
-			fmt.Println("➡️ INTENTA LEVANTARLO MANUALMENTE EN LA CARPETA DASHBOARD")
-			return
-		}
+		fmt.Println("⚠️ Error obteniendo directorio actual, Grafana podría fallar:", err)
+		return
 	}
 	
-	// --- CORRECCIÓN AQUÍ ---
-	// Antes no usábamos 'output' si todo salía bien. Ahora lo imprimimos.
-	fmt.Println("✅ Grafana levantado correctamente (localhost:3000)")
-	fmt.Println("Detalles Docker:", string(output)) 
+	// Ruta absoluta a metrics.db
+	dbPath := fmt.Sprintf("%s/metrics.db", cwd)
+
+	// 2. Limpieza preventiva: Borrar contenedor viejo si existe
+	// Ignoramos el error porque si no existe, fallará y no importa.
+	exec.Command("docker", "rm", "-f", "grafana_so1").Run()
+
+	// 3. Ejecutar comando Docker Run Gigante
+	// docker run -d --name grafana_so1 -p 3000:3000 -e ... -v ... grafana/grafana:latest
+	cmd := exec.Command("docker", "run", "-d",
+		"--name", "grafana_so1",
+		"-p", "3000:3000",
+		"-e", "GF_INSTALL_PLUGINS=frser-sqlite-datasource",
+		"-v", fmt.Sprintf("%s:/var/lib/grafana/metrics.db:ro", dbPath),
+		"grafana/grafana:latest",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("❌ Error crítico levantando Grafana: %v\n", err)
+		fmt.Println("Salida:", string(output))
+	} else {
+		// Cortamos el ID del contenedor para que se vea limpio
+		containerID := strings.TrimSpace(string(output))
+		if len(containerID) > 12 {
+			containerID = containerID[:12]
+		}
+		fmt.Printf("✅ Grafana iniciado (ID: %s). Accede en http://localhost:3000\n", containerID)
+	}
 }
 
 func triggerTraffic() {
+	// Aseguramos ruta absoluta o relativa correcta
 	cmd := exec.Command("/bin/bash", GENERATOR_SCRIPT)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -244,13 +259,13 @@ func loop() {
 
 func insertRamLog(ram SystemRam) {
 	stmt, _ := db.Prepare("INSERT INTO ram_log(total, used, percentage) VALUES(?, ?, ?)")
-    defer stmt.Close()
+	defer stmt.Close()
 	stmt.Exec(ram.TotalMB, ram.UsedMB, ram.Percentage)
 }
 
 func insertProcessLog(ts time.Time, pid int, name string, ram int, cpu float64) {
 	stmt, _ := db.Prepare("INSERT INTO process_log(timestamp, pid, name, ram, cpu) VALUES(?, ?, ?, ?, ?)")
-    defer stmt.Close()
+	defer stmt.Close()
 	stmt.Exec(ts, pid, name, ram, cpu)
 }
 
@@ -260,7 +275,7 @@ func insertKillLog(pid int, name string, reason string) {
 		fmt.Println("Error logueando kill:", err)
 		return
 	}
-    defer stmt.Close()
+	defer stmt.Close()
 	stmt.Exec(pid, name, reason)
 }
 
