@@ -141,27 +141,50 @@ func startGrafanaService() {
 		fmt.Println("⚠️ Error obteniendo directorio actual:", err)
 		return
 	}
+
+	// Ruta absoluta a metrics.db
 	dbPath := fmt.Sprintf("%s/metrics.db", cwd)
 
+	// Ruta a la carpeta de datos persistentes de Grafana (la misma que docker-compose)
+	dashboardPath := fmt.Sprintf("%s/../dashboard", cwd)
+	grafanaDataPath := fmt.Sprintf("%s/grafana_data", dashboardPath)
+
+	// Crear carpeta de datos si no existe
+	if _, err := os.Stat(grafanaDataPath); os.IsNotExist(err) {
+		if mkErr := os.MkdirAll(grafanaDataPath, 0777); mkErr != nil {
+			fmt.Printf("⚠️ No se pudo crear grafana_data: %v\n", mkErr)
+		}
+	}
+
+	// Asegurar permisos amplios (para que el contenedor pueda escribir)
+	os.Chmod(grafanaDataPath, 0777)
+
+	// Eliminar contenedor previo si existe
 	exec.Command("docker", "rm", "-f", "grafana_so1").Run()
 
-	cmd := exec.Command("docker", "run", "-d",
+	// Levantar Grafana con volúmenes persistentes
+	cmd := exec.Command(
+		"docker", "run", "-d",
 		"--name", "grafana_so1",
 		"-p", "3000:3000",
 		"-e", "GF_INSTALL_PLUGINS=frser-sqlite-datasource",
+		// metrics.db en modo lectura
 		"-v", fmt.Sprintf("%s:/var/lib/grafana/metrics.db:ro", dbPath),
+		// carpeta de datos persistente (dashboards, datasources, usuarios, etc.)
+		"-v", fmt.Sprintf("%s:/var/lib/grafana", grafanaDataPath),
 		"grafana/grafana:latest",
 	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("❌ Error levantando Grafana: %v\n", err)
+		fmt.Printf("❌ Error levantando Grafana: %v\nSalida: %s\n", err, string(output))
 	} else {
 		containerID := strings.TrimSpace(string(output))
 		if len(containerID) > 12 {
 			containerID = containerID[:12]
 		}
 		fmt.Printf("✅ Grafana iniciado (ID: %s). http://localhost:3000\n", containerID)
+		fmt.Printf("📁 Datos persistentes en: %s\n", grafanaDataPath)
 	}
 }
 
