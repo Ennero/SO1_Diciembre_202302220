@@ -1,6 +1,6 @@
 # Módulos de Kernel
 
-Expone métricas en `/proc` en formato JSON desde dos módulos: procesos y RAM.
+Expone métricas en `/proc` en formato JSON desde dos módulos: procesos del sistema y métricas de memoria/contenedores.
 
 ## Requisitos
 

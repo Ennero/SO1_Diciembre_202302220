@@ -1,6 +1,6 @@
 # Definimos los dos objetos que queremos construir
-obj-m += ram.o
-obj-m += procesos.o
+obj-m += continfo.o
+obj-m += sysinfo.o
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules

@@ -4,36 +4,34 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/mm.h>
-#include <linux/sysinfo.h> // Necesario para obtener información del sistema
+#include <linux/sysinfo.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Enner Mendizabal");
-MODULE_DESCRIPTION("Modulo RAM SO1");
+MODULE_DESCRIPTION("Modulo RAM/Contenedores SO1 - ContInfo");
 MODULE_VERSION("1.0");
 
-// CAMBIAR CARNET
+// REQUISITO: El módulo de memoria/contenedores va en continfo
+// Asegúrate de cambiar el carnet
 #define PROCFS_NAME "continfo_so1_202302220"
 
 static int my_proc_show(struct seq_file *m, void *v) {
     struct sysinfo si;
     
-    // Obtener información del sistema
     si_meminfo(&si);
     
-    // Convertir a Megabytes (MB)
-    // sysinfo devuelve páginas, mem_unit es el tamaño en bytes de la página
+    // Convertir a MB
     unsigned long total_ram = (si.totalram * si.mem_unit) / (1024 * 1024);
     unsigned long free_ram = (si.freeram * si.mem_unit) / (1024 * 1024);
     unsigned long buffer_ram = (si.bufferram * si.mem_unit) / (1024 * 1024);
-    unsigned long shared_ram = (si.sharedram * si.mem_unit) / (1024 * 1024);
-    
-    // La RAM usada se suele calcular: Total - Libre - Buffers/Cache
+    // Linux calcula 'used' restando free y buffers/cache del total
     unsigned long used_ram = total_ram - free_ram - buffer_ram;
     
-    // Calcular porcentaje
-    unsigned long percent = (used_ram * 100) / total_ram;
+    unsigned long percent = 0;
+    if (total_ram > 0) {
+        percent = (used_ram * 100) / total_ram;
+    }
 
-    // Generar JSON simple (Objeto único, no array)
     seq_printf(m, "{\n");
     seq_printf(m, "  \"total_ram_mb\": %lu,\n", total_ram);
     seq_printf(m, "  \"free_ram_mb\": %lu,\n", free_ram);
@@ -57,13 +55,13 @@ static const struct proc_ops my_proc_ops = {
 
 static int __init my_module_init(void) {
     proc_create(PROCFS_NAME, 0444, NULL, &my_proc_ops);
-    printk(KERN_INFO "SO1: Modulo RAM cargado.\n");
+    printk(KERN_INFO "SO1: Modulo RAM (continfo) cargado.\n");
     return 0;
 }
 
 static void __exit my_module_exit(void) {
     remove_proc_entry(PROCFS_NAME, NULL);
-    printk(KERN_INFO "SO1: Modulo RAM descargado.\n");
+    printk(KERN_INFO "SO1: Modulo RAM (continfo) descargado.\n");
 }
 
 module_init(my_module_init);
