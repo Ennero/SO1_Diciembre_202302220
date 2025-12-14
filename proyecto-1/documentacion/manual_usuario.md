@@ -33,8 +33,11 @@ sudo apt update
 sudo apt install -y build-essential linux-headers-$(uname -r) golang sqlite3
 
 # Instalar Docker (si no lo tiene)
-sudo apt install -y docker.io docker-compose-plugin
+
+sudo apt update
+sudo apt install -y docker.io docker-compose
 sudo usermod -aG docker $USER
+newgrp docker
 # IMPORTANTE: Cierre sesión y vuelva a entrar para aplicar permisos de Docker
 ```
 
@@ -60,9 +63,9 @@ graph TD
 El sistema necesita 3 imágenes base para generar tráfico. Ejecute desde la carpeta raíz del proyecto:
 ```bash
 cd proyecto-1
-docker build -t so1_ram -f docker-files/dockerfile.ram .
-docker build -t so1_cpu -f docker-files/dockerfile.cpu .
-docker build -t so1_low -f docker-files/dockerfile.low .
+docker build -t so1_ram -f bash/docker-files/dockerfile.ram .
+docker build -t so1_cpu -f bash/docker-files/dockerfile.cpu .
+docker build -t so1_low -f bash/docker-files/dockerfile.low .
 ```
 
 **Verificación**: Ejecute `docker images | grep so1_` para confirmar.
