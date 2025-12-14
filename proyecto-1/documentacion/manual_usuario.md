@@ -125,12 +125,21 @@ SELECT (total - used) FROM ram_log ORDER BY id DESC LIMIT 1;
 
 **Contenedores Eliminados (Time Series)**:
 ```sql
-SELECT timestamp as time, count(id) as value FROM kill_log GROUP BY timestamp ORDER BY timestamp ASC;
+SELECT 
+  strftime('%s', timestamp) as time, 
+  count(id) as value 
+FROM kill_log 
+GROUP BY timestamp 
+ORDER BY timestamp ASC;
 ```
 
 **Uso de RAM Global (Time Series)**:
 ```sql
-SELECT timestamp as time, used FROM ram_log ORDER BY timestamp ASC;
+SELECT 
+  strftime('%s', timestamp) as time, 
+  used as value
+FROM ram_log 
+ORDER BY timestamp ASC;
 ```
 
 **Top 5 Contenedores RAM (Pie Chart)**:
@@ -150,7 +159,13 @@ SELECT used FROM ram_log ORDER BY id DESC LIMIT 1;
 
 **Contenedores Activos (Time Series - Extra)**:
 ```sql
-SELECT timestamp as time, count(distinct pid) FROM process_log WHERE name LIKE 'stress%' OR name = 'sleep' GROUP BY timestamp ORDER BY timestamp ASC;
+SELECT 
+  strftime('%s', timestamp) as time, 
+  count(distinct pid) as value
+FROM process_log 
+WHERE name LIKE 'stress%' OR name = 'sleep' 
+GROUP BY timestamp 
+ORDER BY timestamp ASC;
 ```
 
 ### Dashboard B: SISTEMA (Consultas)
@@ -182,7 +197,12 @@ SELECT name || ' (' || pid || ')', MAX(cpu) FROM process_log GROUP BY pid, name 
 
 **Carga Promedio CPU Sistema (Time Series - Extra)**:
 ```sql
-SELECT timestamp as time, avg(cpu) FROM process_log GROUP BY timestamp ORDER BY timestamp ASC;
+SELECT 
+  strftime('%s', timestamp) as time, 
+  avg(cpu) as "CPU Promedio"
+FROM process_log 
+GROUP BY timestamp 
+ORDER BY timestamp ASC;
 ```
 
 ## 4. Solución de Problemas
