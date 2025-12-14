@@ -12,10 +12,10 @@ MODULE_AUTHOR("Enner Mendizabal");
 MODULE_DESCRIPTION("Monitor de Procesos SO1 - SysInfo");
 MODULE_VERSION("1.0");
 
-// REQUISITO: El módulo de procesos del sistema va en sysinfo
 // Asegúrate de cambiar el carnet
 #define PROCFS_NAME "sysinfo_so1_202302220"
 
+// Función para mostrar la información en el archivo proc
 static int my_proc_show(struct seq_file *m, void *v) {
     struct task_struct *task;
     unsigned long rss;
@@ -32,14 +32,10 @@ static int my_proc_show(struct seq_file *m, void *v) {
     for_each_process(task) {
         if (task->mm) {
             // rss devuelve páginas, convertimos a KB (paginas * 4)
-            // PAGE_SHIFT = 12 (4096 bytes). >> 10 para KB.
-            // Forma segura: (pages * (PAGE_SIZE / 1024))
             rss = get_mm_rss(task->mm) << (PAGE_SHIFT - 10);
             vsz = (task->mm->total_vm) << (PAGE_SHIFT - 10);
 
             // Cálculo del porcentaje de RAM (RSS / Total RAM)
-            // Multiplicamos por 10000 para tener 2 decimales de precisión si quisieras, 
-            // pero para entero simple: (get_mm_rss * 100) / total_pages
             unsigned long rss_pages = get_mm_rss(task->mm);
             unsigned long mem_percent = (rss_pages * 100) / total_ram_pages;
 
@@ -59,7 +55,7 @@ static int my_proc_show(struct seq_file *m, void *v) {
             // Cumpliendo requisito de porcentaje de memoria
             seq_printf(m, "    \"ram_percent\": %lu,\n", mem_percent);
             
-            // Dejamos CPU crudo para calcular en Frontend (Go/Python)
+            // Dejamos CPU crudo para calcular en Frontend
             seq_printf(m, "    \"cpu_utime\": %llu,\n", task->utime);
             seq_printf(m, "    \"cpu_stime\": %llu\n", task->stime);
             
@@ -71,10 +67,12 @@ static int my_proc_show(struct seq_file *m, void *v) {
     return 0;
 }
 
+// Apertura del archivo proc
 static int my_proc_open(struct inode *inode, struct file *file) {
     return single_open(file, my_proc_show, NULL);
 }
 
+// Definición de las operaciones del archivo proc
 static const struct proc_ops my_proc_ops = {
     .proc_open = my_proc_open,
     .proc_read = seq_read,
@@ -82,12 +80,14 @@ static const struct proc_ops my_proc_ops = {
     .proc_release = single_release,
 };
 
+// Inicialización del módulo
 static int __init my_module_init(void) {
     proc_create(PROCFS_NAME, 0444, NULL, &my_proc_ops);
     printk(KERN_INFO "SO1: Modulo Procesos (sysinfo) cargado.\n");
     return 0;
 }
 
+// Limpieza del módulo
 static void __exit my_module_exit(void) {
     remove_proc_entry(PROCFS_NAME, NULL);
     printk(KERN_INFO "SO1: Modulo Procesos (sysinfo) descargado.\n");

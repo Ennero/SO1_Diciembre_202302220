@@ -11,7 +11,6 @@ MODULE_AUTHOR("Enner Mendizabal");
 MODULE_DESCRIPTION("Modulo RAM/Contenedores SO1 - ContInfo");
 MODULE_VERSION("1.0");
 
-// REQUISITO: El módulo de memoria/contenedores va en continfo
 // Asegúrate de cambiar el carnet
 #define PROCFS_NAME "continfo_so1_202302220"
 
@@ -42,10 +41,12 @@ static int my_proc_show(struct seq_file *m, void *v) {
     return 0;
 }
 
+// Apertura del archivo proc
 static int my_proc_open(struct inode *inode, struct file *file) {
     return single_open(file, my_proc_show, NULL);
 }
 
+// Definición de las operaciones del archivo proc
 static const struct proc_ops my_proc_ops = {
     .proc_open = my_proc_open,
     .proc_read = seq_read,
@@ -53,12 +54,14 @@ static const struct proc_ops my_proc_ops = {
     .proc_release = single_release,
 };
 
+// Inicialización y limpieza del módulo
 static int __init my_module_init(void) {
     proc_create(PROCFS_NAME, 0444, NULL, &my_proc_ops);
     printk(KERN_INFO "SO1: Modulo RAM (continfo) cargado.\n");
     return 0;
 }
 
+// Limpieza del módulo
 static void __exit my_module_exit(void) {
     remove_proc_entry(PROCFS_NAME, NULL);
     printk(KERN_INFO "SO1: Modulo RAM (continfo) descargado.\n");

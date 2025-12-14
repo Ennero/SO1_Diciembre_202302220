@@ -1,16 +1,13 @@
 # Script `generator.sh`
 
-Crea 10 contenedores aleatorios a partir de las imágenes `so1_ram`, `so1_cpu` y `so1_low`, asignando nombres únicos para facilitar el rastreo.
+Este script automatiza la creación de contenedores. Genera 10 contenedores aleatorios a partir de las imágenes `so1_ram`, `so1_cpu` y `so1_low`.
 
-## Requisitos
+## Requisitos previa ejecución
 
-- Imágenes construidas previamente (ver: [`../docker-files/`](../docker-files/))
-
-## Ejecución
-
-```bash
-# Dar permisos de ejecución (opcional)
-chmod +x generator.sh
+- Imágenes de docker construidas previamente.
+- Permisos de ejecución en el script:
+  ```bash
+  chmod +x generator.sh
 
 # Ejecutar
 ./generator.sh

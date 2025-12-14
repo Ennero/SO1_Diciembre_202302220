@@ -201,6 +201,9 @@ cat /proc/continfo_so1_202302220
 
 Archivos relacionados:
 
+
+
+
 - `modulo-kernel/Makefile` — [ver archivo](../modulo-kernel/Makefile)
 - `modulo-kernel/procesos.c` — [ver archivo](../modulo-kernel/procesos.c)
 - `modulo-kernel/ram.c` — [ver archivo](../modulo-kernel/ram.c)

@@ -55,50 +55,44 @@ var history = make(map[int]ProcessStats)
 var db *sql.DB
 
 func main() {
-	fmt.Println("--- Iniciando Daemon SO1 (Versión Optimizada) ---")
+	fmt.Println("--- Iniciando Daemon ---")
 
-	// 1. Inicializar BD
+	// Inicializar BD
 	initDB()
 	defer db.Close()
+
+	// Cargar Módulos de Kernel
+	loadKernelModules()
+	// -------------------------------------------
 
 	fmt.Println("Monitor RAM:", RAM_FILE)
 	fmt.Println("Monitor Procesos:", PROC_FILE)
 
-	// 2. Levantar Grafana
+	// Levantar Grafana
 	startGrafanaService()
 
-	// 2.5 Manejar señales para limpiar cron al salir
+	setupCronjob()
+	// ----------------------------------------------
+
+	// Manejar señales para limpiar cron al salir
 	setupSignalHandler()
 
-	// 3. Configurar Timers
-	// Aumentamos ligeramente el ticker de monitoreo para dar tiempo al cálculo de CPU
-	monitorTicker := time.NewTicker(5 * time.Second)
+	// Configurar Timers
+	monitorTicker := time.NewTicker(20 * time.Second)
 	defer monitorTicker.Stop()
 
-	// Generador de tráfico
-	generatorTicker := time.NewTicker(60 * time.Second)
-	defer generatorTicker.Stop()
 
-	// Carga inicial
-	go triggerTraffic()
+	fmt.Println("Sistema corriendo. Presiona Ctrl+C para detener.")
 
-	fmt.Println("✅ Sistema corriendo. Presiona Ctrl+C para detener.")
-
-	for {
-		select {
-		case <-monitorTicker.C:
-			fmt.Println("\n------------------------------------------------")
-			fmt.Printf("[%s] 🔍 Escaneando sistema...\n", time.Now().Format("15:04:05"))
-			loop()
-
-		case <-generatorTicker.C:
-			fmt.Println("\n------------------------------------------------")
-			fmt.Printf("[%s] 🚀 Generando tráfico automático...\n", time.Now().Format("15:04:05"))
-			go triggerTraffic()
-		}
+	// Loop inicial inmediato
+	for range monitorTicker.C {
+		fmt.Println("\n------------------------------------------------")
+		fmt.Printf("[%s] Escaneando sistema...\n", time.Now().Format("15:04:05"))
+		loop()
 	}
 }
 
+// Crear y preparar la base de datos SQLite
 func initDB() {
 	var err error
 	db, err = sql.Open("sqlite3", DB_FILE)
@@ -135,29 +129,29 @@ func initDB() {
         reason TEXT
     );`)
 
-	fmt.Println("✅ Base de datos lista: metrics.db")
+	fmt.Println("Base de datos lista: metrics.db")
 }
 
 func startGrafanaService() {
-	fmt.Println("🐳 Levantando Grafana via 'docker run'...")
+	fmt.Println("Levantando Grafana via 'docker run'...")
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Println("⚠️ Error obteniendo directorio actual:", err)
+		fmt.Println("Error obteniendo directorio actual:", err)
 		return
 	}
 
 	// Ruta absoluta a metrics.db
 	dbPath := fmt.Sprintf("%s/metrics.db", cwd)
 
-	// Ruta a la carpeta de datos persistentes de Grafana (la misma que docker-compose)
+	// Ruta a la carpeta de datos persistentes de Grafana
 	dashboardPath := fmt.Sprintf("%s/../dashboard", cwd)
 	grafanaDataPath := fmt.Sprintf("%s/grafana_data", dashboardPath)
 
 	// Crear carpeta de datos si no existe
 	if _, err := os.Stat(grafanaDataPath); os.IsNotExist(err) {
 		if mkErr := os.MkdirAll(grafanaDataPath, 0777); mkErr != nil {
-			fmt.Printf("⚠️ No se pudo crear grafana_data: %v\n", mkErr)
+			fmt.Printf("No se pudo crear grafana_data: %v\n", mkErr)
 		}
 	}
 
@@ -175,47 +169,41 @@ func startGrafanaService() {
 		"-e", "GF_INSTALL_PLUGINS=frser-sqlite-datasource",
 		// metrics.db en modo lectura
 		"-v", fmt.Sprintf("%s:/var/lib/grafana/metrics.db:ro", dbPath),
-		// carpeta de datos persistente (dashboards, datasources, usuarios, etc.)
+		// carpeta de datos persistente
 		"-v", fmt.Sprintf("%s:/var/lib/grafana", grafanaDataPath),
 		"grafana/grafana:latest",
 	)
 
+	// Ejecutar comando
 	output, err := cmd.CombinedOutput()
+
+	// Reportar resultado
 	if err != nil {
-		fmt.Printf("❌ Error levantando Grafana: %v\nSalida: %s\n", err, string(output))
+		fmt.Printf("Error levantando Grafana: %v\nSalida: %s\n", err, string(output))
 	} else {
 		containerID := strings.TrimSpace(string(output))
 		if len(containerID) > 12 {
 			containerID = containerID[:12]
 		}
-		fmt.Printf("✅ Grafana iniciado (ID: %s). http://localhost:3000\n", containerID)
-		fmt.Printf("📁 Datos persistentes en: %s\n", grafanaDataPath)
-	}
-}
-
-func triggerTraffic() {
-	cmd := exec.Command("/bin/bash", GENERATOR_SCRIPT)
-	_, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Printf("⚠️ Error ejecutando generator.sh: %v\n", err)
-	} else {
-		fmt.Println("✅ Tráfico generado exitosamente.")
+		fmt.Printf("Grafana iniciado (ID: %s). http://localhost:3000\n", containerID)
+		fmt.Printf("Datos persistentes en: %s\n", grafanaDataPath)
 	}
 }
 
 func loop() {
 	ramData, err := readRamModule()
 	if err != nil {
-		fmt.Printf("⚠️ Error leyendo RAM: %v\n", err)
+		fmt.Printf("Error leyendo RAM: %v\n", err)
 	} else {
-		fmt.Printf("💾 RAM SYSTEM: %d%% Usado (%d/%d MB)\n", ramData.Percentage, ramData.UsedMB, ramData.TotalMB)
+		fmt.Printf("RAM SYSTEM: %d%% Usado (%d/%d MB)\n", ramData.Percentage, ramData.UsedMB, ramData.TotalMB)
 		insertRamLog(ramData)
 	}
 
+	// Obtener contenedores Docker activos
 	dockerContainers := getDockerContainers()
 	kernelProcs, err := readProcessModule()
 	if err != nil {
-		fmt.Printf("⚠️ Error leyendo Procesos: %v\n", err)
+		fmt.Printf("Error leyendo Procesos: %v\n", err)
 		return
 	}
 
@@ -236,17 +224,11 @@ func loop() {
 			cpuPercent := calculateCPU(proc)
 			ramMB := int(proc.RamKB / 1024)
 
-			// Logueamos TODOS los procesos (padres e hijos) en la DB para las gráficas
 			insertProcessLog(now, proc.Pid, proc.Name, ramMB, cpuPercent)
 
 			tipo := "BAJO"
 			if isHighFamily {
 				tipo = "ALTO"
-
-				// --- CORRECCIÓN DE CONTEO ---
-				// Solo contamos como "Contenedor" al proceso padre "stress-ng".
-				// Ignoramos "stress-ng-cpu", "stress-ng-vm" para la suma,
-				// pero los agregamos a la lista de 'procsHigh' por si hay que matar el PID.
 				if proc.Name == "stress-ng" {
 					countHigh++
 				}
@@ -273,13 +255,13 @@ func loop() {
 	if len(dockerContainers) > 0 {
 		if countHigh > DESIRED_HIGH {
 			diff := countHigh - DESIRED_HIGH
-			fmt.Printf("⚠️ Exceso ALTOS (%d detectados). Eliminando %d...\n", countHigh, diff)
+			fmt.Printf("Exceso ALTOS (%d detectados). Eliminando %d...\n", countHigh, diff)
 			// Priorizamos matar procesos padres ("stress-ng") primero
 			killContainers(diff, procsHigh, "EXCESO_ALTO", "stress-ng")
 		}
 		if countLow > DESIRED_LOW {
 			diff := countLow - DESIRED_LOW
-			fmt.Printf("⚠️ Exceso BAJOS (%d detectados). Eliminando %d...\n", countLow, diff)
+			fmt.Printf("Exceso BAJOS (%d detectados). Eliminando %d...\n", countLow, diff)
 			killContainers(diff, procsLow, "EXCESO_BAJO", "sleep")
 		}
 	}
@@ -287,18 +269,21 @@ func loop() {
 
 // --- BASE DE DATOS ---
 
+// Loguear en ram_log
 func insertRamLog(ram SystemRam) {
 	stmt, _ := db.Prepare("INSERT INTO ram_log(total, used, percentage) VALUES(?, ?, ?)")
 	defer stmt.Close()
 	stmt.Exec(ram.TotalMB, ram.UsedMB, ram.Percentage)
 }
 
+// Loguear en process_log
 func insertProcessLog(ts time.Time, pid int, name string, ram int, cpu float64) {
 	stmt, _ := db.Prepare("INSERT INTO process_log(timestamp, pid, name, ram, cpu) VALUES(?, ?, ?, ?, ?)")
 	defer stmt.Close()
 	stmt.Exec(ts, pid, name, ram, cpu)
 }
 
+// Loguear en kill_log
 func insertKillLog(pid int, name string, reason string) {
 	stmt, err := db.Prepare("INSERT INTO kill_log(pid, name, reason) VALUES(?, ?, ?)")
 	if err != nil {
@@ -309,13 +294,13 @@ func insertKillLog(pid int, name string, reason string) {
 	stmt.Exec(pid, name, reason)
 }
 
-// --- AUXILIARES ---
+// --- LÓGICA DE MATANZA ---
 
-// Se añade filtro 'targetName' para intentar matar primero a los padres
+// Se añade filtro para intentar matar primero a los padres
 func killContainers(amount int, procs []KernelProcess, reason string, targetName string) {
 	killed := 0
 
-	// Pasada 1: Matar coincidencias exactas (Padres)
+	// Matar coincidencias exactas
 	for _, proc := range procs {
 		if killed >= amount {
 			return
@@ -328,13 +313,12 @@ func killContainers(amount int, procs []KernelProcess, reason string, targetName
 		}
 	}
 
-	// Pasada 2: Si aun falta por matar, matar cualquier cosa de la lista (Hijos huérfanos)
+	// Si aun falta por matar, matar cualquier cosa de la lista
 	for _, proc := range procs {
 		if killed >= amount {
 			return
 		}
-		// Verificar si el proceso sigue vivo antes de intentar matarlo de nuevo es complejo en Go simple,
-		// así que simplemente intentamos matar si no coincide con targetName (ya que esos ya murieron o no estaban)
+		// Matar si no coincide con targetName (ya que esos ya murieron o no estaban)
 		if proc.Name != targetName {
 			fmt.Printf("   💀 Matando PID %d (%s) [Limpieza]...\n", proc.Pid, proc.Name)
 			insertKillLog(proc.Pid, proc.Name, reason)
@@ -344,6 +328,7 @@ func killContainers(amount int, procs []KernelProcess, reason string, targetName
 	}
 }
 
+// Leer estadísticas de RAM desde el módulo del kernel
 func readRamModule() (SystemRam, error) {
 	var stats SystemRam
 	data, err := os.ReadFile(RAM_FILE)
@@ -354,6 +339,7 @@ func readRamModule() (SystemRam, error) {
 	return stats, err
 }
 
+// Leer lista de procesos desde el módulo del kernel
 func readProcessModule() ([]KernelProcess, error) {
 	data, err := os.ReadFile(PROC_FILE)
 	if err != nil {
@@ -364,6 +350,7 @@ func readProcessModule() ([]KernelProcess, error) {
 	return procs, err
 }
 
+// Obtener lista de contenedores Docker activos
 func getDockerContainers() map[string]string {
 	cmd := exec.Command("docker", "ps", "--format", "{{.ID}}|{{.Names}}")
 	output, err := cmd.Output()
@@ -383,10 +370,12 @@ func getDockerContainers() map[string]string {
 	return containers
 }
 
+// Calcular uso de CPU basado en historial
 func calculateCPU(proc KernelProcess) float64 {
 	currentTotalTime := proc.CpuUtime + proc.CpuStime
 	currentTime := time.Now()
 
+	// Obtener stats previos
 	stats, exists := history[proc.Pid]
 	if !exists {
 		history[proc.Pid] = ProcessStats{
@@ -397,9 +386,11 @@ func calculateCPU(proc KernelProcess) float64 {
 		return 0.0
 	}
 
+	// Calcular diferencias
 	deltaCpu := currentTotalTime - stats.TotalTime
 	deltaTime := currentTime.Sub(stats.LastSeen)
 
+	// Actualizar historial
 	history[proc.Pid] = ProcessStats{
 		Pid:       proc.Pid,
 		TotalTime: currentTotalTime,
@@ -411,61 +402,72 @@ func calculateCPU(proc KernelProcess) float64 {
 		return 0.0
 	}
 
-	// Suponemos que el módulo da tiempo en nanosegundos totales de CPU.
-	// CPU% = (cpu_time_interval / real_interval) * 100
+	// CPU% = (cpu_time_interval / real_interval) * 100 (lo da en nanosegundos)
 	cpuUsage := (float64(deltaCpu) / float64(deltaTime.Nanoseconds())) * 100.0
 
 	// Filtrar valores absurdos por errores de medición o reinicios
 	if cpuUsage < 0 || math.IsNaN(cpuUsage) || math.IsInf(cpuUsage, 0) {
 		return 0.0
 	}
+
 	if cpuUsage > 400.0 {
-		// En un contenedor típico difícilmente tendrás >4 cores dedicados;
-		// si tu máquina tiene más y quieres ver >400%, sube este límite.
 		cpuUsage = 400.0
 	}
 
 	return cpuUsage
 }
 
-// handleSignals sets up signal handlers to gracefully shutdown the application.
-// It listens for SIGINT (Ctrl+C) and SIGTERM signals in a separate goroutine.
-// When either signal is received, it prints a termination message and exits the process.
-// This function should be called during application initialization to ensure
-// proper signal handling throughout the program's lifetime.
-func handleSignals() {
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		<-signalChan
-		fmt.Println("\n🔔 Señal de terminación recibida. Deteniendo sistema...")
-		// Aquí puedes agregar lógica de limpieza si es necesario
-		os.Exit(0)
-	}()
-}
-
+// Configurar manejador de señales para limpiar cronjob al salir
 func setupSignalHandler() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-stop
-		fmt.Println("\n🧹 Limpiando cronjob de generator.sh antes de salir...")
+		fmt.Println("\nDeteniendo servicio...")
 
-		// Eliminamos cualquier línea de la crontab que contenga 'bash/generator.sh'
-		// Esto asume que el cron está definido para el mismo usuario que ejecuta el daemon.
+		// Limpiar Cronjob
+		fmt.Println("Limpiando cronjob...")
 		cmd := exec.Command("bash", "-c",
 			`crontab -l 2>/dev/null | grep -v 'bash/generator.sh' | crontab -`)
+		cmd.Run()
 
-		if err := cmd.Run(); err != nil {
-			fmt.Println("⚠️ Error eliminando cronjob de generator.sh:", err)
-		} else {
-			fmt.Println("✅ Cronjob de generator.sh limpiado (si existía).")
-		}
-
-		// Aquí puedes limpiar otras cosas si quieres (ej. parar contenedores, etc.)
+		// Descargar Módulos
+		fmt.Println("Descargando módulos...")
+		exec.Command("sudo", "rmmod", "sysinfo").Run()
+		exec.Command("sudo", "rmmod", "continfo").Run()
 
 		os.Exit(0)
 	}()
+}
+
+// Cargar módulos del kernel
+func loadKernelModules() {
+	fmt.Println("Cargando módulos del kernel...")
+	cmd1 := exec.Command("sudo", "insmod", "../modulo-kernel/sysinfo.ko")
+	cmd1.Run()
+	cmd2 := exec.Command("sudo", "insmod", "../modulo-kernel/continfo.ko")
+	cmd2.Run()
+
+	fmt.Println("Módulos cargados")
+}
+
+// Configurar cronjob para ejecutar generator.sh cada minuto
+func setupCronjob() {
+	fmt.Println("Configurando Cronjob del sistema...")
+
+	cwd, _ := os.Getwd()
+	scriptPath := fmt.Sprintf("%s/../bash/generator.sh", cwd)
+
+	cronEntry := fmt.Sprintf("* * * * * /bin/bash %s", scriptPath)
+
+	cmd := exec.Command("bash", "-c",
+		fmt.Sprintf("(crontab -l 2>/dev/null; echo \"%s\") | crontab -", cronEntry))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Error creando cronjob: %v | %s\n", err, string(output))
+	} else {
+		fmt.Println("Cronjob configurado en el sistema operativo.")
+	}
 }
