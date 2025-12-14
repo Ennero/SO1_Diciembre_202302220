@@ -1,88 +1,63 @@
 # Manual de Usuario — Proyecto 1 (SO1)
 
-Guía práctica y amigable para construir imágenes, cargar los módulos de kernel, generar carga con contenedores y ejecutar el daemon de monitoreo con visualización en Grafana.
+Guía práctica para construir imágenes, compilar módulos de kernel y ejecutar el sistema de monitoreo automatizado con visualización en Grafana.
 
 ## Índice
 
 - [Manual de Usuario — Proyecto 1 (SO1)](#manual-de-usuario--proyecto-1-so1)
 	- [Índice](#índice)
-	- [Requisitos Previos](#requisitos-previos)
-	- [Instalación y Ejecución](#instalación-y-ejecución)
-		- [1 Construir imágenes de Docker](#1-construir-imágenes-de-docker)
-		- [2 Compilar y cargar los módulos del Kernel](#2-compilar-y-cargar-los-módulos-del-kernel)
-		- [3 Iniciar Monitor y Base de Datos (Go)](#3-iniciar-monitor-y-base-de-datos-go)
-		- [4 Levantar Grafana](#4-levantar-grafana)
-			- [Las 8 Consultas para Grafana (Dashboard)](#las-8-consultas-para-grafana-dashboard)
-		- [5 Generar tráfico (contenedores de prueba)](#5-generar-tráfico-contenedores-de-prueba)
-	- [Carpeta Compartida Host↔VM (Virtio-FS)](#carpeta-compartida-hostvm-virtio-fs)
-		- [Migrar el proyecto desde carpeta compartida a Home (100% Linux)](#migrar-el-proyecto-desde-carpeta-compartida-a-home-100-linux)
-	- [Solución de Problemas](#solución-de-problemas)
-	- [Limpieza](#limpieza)
+	- [1. Requisitos Previos](#1-requisitos-previos)
+	- [1.1. Arquitectura del Sistema (Diagrama)](#11-arquitectura-del-sistema-diagrama)
+	- [2. Instalación y Ejecución](#2-instalación-y-ejecución)
+		- [Paso 1: Construir imágenes Docker](#paso-1-construir-imágenes-docker)
+		- [Paso 2: Compilar Módulos del Kernel](#paso-2-compilar-módulos-del-kernel)
+		- [Paso 3: Iniciar el Daemon (Go)](#paso-3-iniciar-el-daemon-go)
+	- [3. Visualización en Grafana](#3-visualización-en-grafana)
+		- [Configuración Inicial](#configuración-inicial)
+		- [Dashboard A: CONTENEDORES (Consultas)](#dashboard-a-contenedores-consultas)
+		- [Dashboard B: SISTEMA (Consultas)](#dashboard-b-sistema-consultas)
+	- [4. Solución de Problemas](#4-solución-de-problemas)
+	- [5. Limpieza](#5-limpieza)
 
-## Requisitos Previos
+## 1. Requisitos Previos
 
-- Sistema operativo: Linux (Ubuntu 22.04+ recomendado)
-- Docker instalado y servicio activo (`docker --version` para verificar)
-- Go (Golang) 1.20+ (`go version` para verificar)
-- Herramientas de compilación: GCC y Make (`sudo apt install build-essential`)
-- Encabezados del kernel instalados: `sudo apt install linux-headers-$(uname -r)`
-- Permisos para usar Docker: ejecutar con `sudo` o agregar su usuario al grupo `docker` y reiniciar sesión: `sudo usermod -aG docker $USER`
+- **OS**: Linux (Ubuntu 22.04+ recomendado).
+- **Docker**: Instalado y activo.
+- **Go**: Versión 1.20 o superior.
+- **Herramientas**: `make`, `gcc`, `sqlite3`.
 
-Instalar todas las dependencias (Ubuntu/Debian)
-
+**Instalación rápida de dependencias (Ubuntu/Debian)**:
 ```bash
-# 1. Actualizar índices
+# Actualizar y herramientas base
 sudo apt update
+sudo apt install -y build-essential linux-headers-$(uname -r) golang sqlite3
 
-# 2. Herramientas de compilación y headers (necesario para compilar ciertas dependencias)
-sudo apt install -y build-essential linux-headers-$(uname -r)
-
-# 3. Docker Engine y Docker Compose V2
-# NOTA: 'docker-compose-plugin' reemplaza al antiguo paquete python 'docker-compose'
+# Instalar Docker (si no lo tiene)
 sudo apt install -y docker.io docker-compose-plugin
-
-# (Comentado para evitar conflictos: No mezcles Snap con Apt. Usa uno u otro)
-# sudo snap install docker
-
-# 4. Habilitar y arrancar Docker
-sudo systemctl enable --now docker
-
-# 5. Configurar Docker sin sudo
-# Esto agrega tu usuario actual al grupo docker
-sudo usermod -aG docker "$USER"
-echo "[INFO] Recuerda cerrar sesión y volver a entrar para que funcione Docker sin 'sudo'"
-
-# 6. Instalar Go
-sudo apt install -y golang
-
-# 7. (Opcional) Crear alias para compatibilidad
-# Esto permite que si escribes 'docker-compose' (viejo), ejecute 'docker compose' (nuevo)
-echo 'alias docker-compose="docker compose"' >> ~/.bashrc
-
-# 8. Verificaciones
-echo "--- Verificando versiones ---"
-docker --version
-docker compose version   # Nota: El comando nuevo es SIN guion
-go version
+sudo usermod -aG docker $USER
+# IMPORTANTE: Cierre sesión y vuelva a entrar para aplicar permisos de Docker
 ```
 
-Iniciar el servicio de Docker (si no está activo)
 
-```bash
-# Arrancar el servicio Docker
-sudo systemctl start docker
+## 1.1. Arquitectura del Sistema (Diagrama)
 
-# Verificar estado (debe indicar "Active: active (running)")
-sudo systemctl status docker
+El siguiente diagrama ilustra cómo fluyen los datos desde el núcleo de Linux hasta su pantalla en Grafana:
+
+```mermaid
+graph TD
+    A[Linux Kernel] -->|Lee Memoria/Procesos| B(Módulos C)
+    B -->|Escribe en /proc| C[Archivos /proc]
+    C -->|Lee JSON| D[Daemon Go]
+    D -->|Guarda Datos| E[(Base de Datos SQLite)]
+    D -->|Controla| F[Docker / Contenedores]
+    E -->|Lee Datos| G[Grafana Dashboard]
 ```
 
-## Instalación y Ejecución
+## 2. Instalación y Ejecución
 
+### Paso 1: Construir imágenes Docker
 
-### 1 Construir imágenes de Docker
-
-Desde la raíz del repositorio o entrando a `proyecto-1`:
-
+El sistema necesita 3 imágenes base para generar tráfico. Ejecute desde la carpeta raíz del proyecto:
 ```bash
 cd proyecto-1
 docker build -t so1_ram -f docker-files/dockerfile.ram .
@@ -90,291 +65,160 @@ docker build -t so1_cpu -f docker-files/dockerfile.cpu .
 docker build -t so1_low -f docker-files/dockerfile.low .
 ```
 
-Archivos Dockerfiles:
+**Verificación**: Ejecute `docker images | grep so1_` para confirmar.
 
-- `docker-files/dockerfile.ram` — [ver archivo](../docker-files/dockerfile.ram)
-- `docker-files/dockerfile.cpu` — [ver archivo](../docker-files/dockerfile.cpu)
-- `docker-files/dockerfile.low` — [ver archivo](../docker-files/dockerfile.low)
+### Paso 2: Compilar Módulos del Kernel
 
-### 2 Compilar y cargar los módulos del Kernel
-
+Antes de iniciar el daemon, debemos compilar los archivos `.c` a objetos de kernel `.ko`.
 ```bash
-cd proyecto-1/modulo-kernel
+cd modulo-kernel
 make clean && make
-
-# Cargar módulos (requiere privilegios)
-sudo insmod procesos.ko
-sudo insmod ram.ko
-
-# Verificación de dispositivos /proc
-cat /proc/sysinfo_so1_202302220
-cat /proc/continfo_so1_202302220
 ```
 
-Debería mostrarse un arreglo JSON con la lista de procesos y métricas. Si hay errores al cargar, revise `dmesg | tail -n 50`.
+Esto generará `sysinfo.ko` y `continfo.ko`.
 
-Archivos relacionados:
+> **Nota**: No es necesario cargarlos manualmente (`insmod`), el Daemon de Go lo hará automáticamente.
 
-- `modulo-kernel/Makefile` — [ver archivo](../modulo-kernel/Makefile)
-- `modulo-kernel/procesos.c` — [ver archivo](../modulo-kernel/procesos.c)
-- `modulo-kernel/ram.c` — [ver archivo](../modulo-kernel/ram.c)
+### Paso 3: Iniciar el Daemon (Go)
 
-### 3 Iniciar Monitor y Base de Datos (Go)
-
-El daemon lee los archivos de `/proc` y guarda la información en `metrics.db` (SQLite).
-
+El daemon es el cerebro del proyecto: carga los módulos, configura el cronjob, levanta Grafana y monitorea el sistema.
 ```bash
-cd proyecto-1/go-daemon
-
-# Instalar dependencias (solo la primera vez)
-# Nota: si ya existe `go.mod`, no ejecute `go mod init`
+cd ../go-daemon
 go mod tidy
 
-# Ejecutar con permisos de superusuario (lectura de /proc y manejo de contenedores)
-sudo env "PATH=$PATH" go run main.go
+# Ejecutar con SUDO (Necesario para insmod y acceso a /proc)
+sudo go run main.go
 ```
 
+**Lo que verás en consola**:
 
-### 4 Levantar Grafana
+- Cargando módulos del kernel... (Carga `sysinfo` y `continfo`).
+- Levantando Grafana... (Inicia contenedor en puerto 3000).
+- Configurando Cronjob... (Programa `generator.sh` cada 1 min).
+- Logs cada 20s indicando estado de RAM y limpieza de contenedores.
 
-Grafana se levanta automáticamente desde el daemon con `docker run` y persiste sus dashboards en `dashboard/grafana_data`. Solo necesitas asegurarte de que existan el archivo de base y la carpeta de datos:
+## 3. Visualización en Grafana
 
-```bash
-cd proyecto-1
+### Configuración Inicial
 
-# Crear archivo DB vacío con permisos amplios para evitar errores de lectura en Grafana
-touch go-daemon/metrics.db
-chmod 666 go-daemon/metrics.db
+1. Acceda a http://localhost:3000 (Usuario: `admin` / Clave: `admin`).
+2. Vaya a **Connections** -> **Add new connection** -> **SQLite**.
+3. En **Path**, ingrese: `/var/lib/grafana/metrics.db`.
+4. Clic en **Save & Test**.
 
-# (Opcional) crear carpeta de datos persistentes usada por el daemon
-mkdir -p dashboard/grafana_data
-chmod 777 dashboard/grafana_data
+### Dashboard A: CONTENEDORES (Consultas)
 
-# Luego ejecuta el daemon (sección 3) y Grafana quedará arriba en http://localhost:3000
-```
+Este dashboard filtra los datos para mostrar solo la actividad de `stress-ng` y `sleep`.
 
-Acceder a Grafana: http://localhost:3000 (Usuario: `admin` / Password: `admin`).
-
-Persistencia: dashboards, data sources y usuarios viven en `dashboard/grafana_data` (montado en `/var/lib/grafana`). La base `metrics.db` se monta de solo lectura en `/var/lib/grafana/metrics.db`.
-
-¿Prefieres `docker-compose`? Desde `dashboard/` sigue funcionando:
-
-```bash
-cd proyecto-1
-touch go-daemon/metrics.db && chmod 666 go-daemon/metrics.db
-cd dashboard
-sudo docker-compose up -d
-```
-
-Configuración rápida en Grafana:
-- Añade un Data Source de tipo "SQLite" (plugin `frser-sqlite-datasource` se instala solo).
-- Ruta del archivo: `/var/lib/grafana/metrics.db`.
-- Guarda y prueba. Ejemplos de consultas:
-
-#### Las 8 Consultas para Grafana (Dashboard)
-
-1) Monitor de RAM en Tiempo Real (Dientes de Sierra)
-- Visualización: Time Series (líneas)
-- Qué muestra: Evolución del porcentaje de RAM del sistema.
-
-```sql
-SELECT 
-    strftime('%s', timestamp) as time,
-    percentage AS "Uso RAM %"
-FROM ram_log 
-ORDER BY timestamp ASC;
-```
-
-2) Consumo de RAM en MB (Actual)
-- Visualización: Gauge o Stat
-- Qué muestra: MB usados actualmente.
-
-```sql
-SELECT 
-	used AS "MB Usados"
-FROM ram_log 
-ORDER BY timestamp DESC 
-LIMIT 1;
-```
-
-3) Total de Contenedores Eliminados
-- Visualización: Stat
-- Qué muestra: Conteo histórico de eliminaciones (Thanos).
-
-```sql
-SELECT COUNT(*) AS "Total Eliminados" FROM kill_log;
-```
-
-4) Total de Contenedores Eliminados en el tiempo (Log de Muertes)
-- Visualización: Table
-- Qué muestra: Quién se mató, cuándo y por qué.
-
-```sql
-SELECT 
-    strftime('%s', timestamp) * 1000 AS time,
-    pid AS "PID", 
-    name AS "Nombre Contenedor", 
-    reason AS "Razón"
-FROM kill_log 
-ORDER BY timestamp DESC;
-```
-
-5) Top Contenedores por Consumo de CPU (Histórico)
-- Visualización: Bar Gauge
-- Qué muestra: Máximo %CPU registrado por contenedor.
-
-```sql
-SELECT 
-	name || ' (' || pid || ')' AS Container, 
-	MAX(cpu) AS "Max CPU %"
-FROM process_log 
-GROUP BY pid, name
-ORDER BY "Max CPU %" DESC 
-LIMIT 5;
-```
-
-6) Total de RAM
-- Visualización: Gauge
-- Qué muestra: Máximo RAM en MB.
-
+**Total RAM (Stat)**:
 ```sql
 SELECT total FROM ram_log ORDER BY id DESC LIMIT 1;
 ```
 
-7) Tabla de Procesos en Ejecución (Snapshot Actual)
-- Visualización: Table
-- Qué muestra: Últimos procesos registrados con RAM y CPU.
-
+**Free RAM (Stat)**:
 ```sql
-SELECT 
-    strftime('%s', timestamp) * 1000 AS time,
-    pid, 
-    name, 
-    ram AS "RAM (MB)", 
-    cpu AS "CPU (%)"
-FROM process_log 
-ORDER BY timestamp DESC 
-LIMIT 10;
+SELECT (total - used) FROM ram_log ORDER BY id DESC LIMIT 1;
 ```
 
-8) Porcentaje de CPU en Tiempo Real (Por Contenedor)
-- Visualización: Time Series
-- Qué muestra: Serie temporal por contenedor (métrica por nombre+pid).
-
+**Contenedores Eliminados (Time Series)**:
 ```sql
-SELECT 
-    strftime('%s', timestamp) AS time,
-    cpu,
-    name || '_' || pid AS metric
-FROM process_log
-WHERE timestamp > datetime('now', '-10 minutes')
-ORDER BY timestamp ASC;
+SELECT timestamp as time, count(id) as value FROM kill_log GROUP BY timestamp ORDER BY timestamp ASC;
 ```
 
-Nota: En la visualización 8, configura en Grafana la opción "Column to use as metric" → `metric`.
+**Uso de RAM Global (Time Series)**:
+```sql
+SELECT timestamp as time, used FROM ram_log ORDER BY timestamp ASC;
+```
 
-Tip: Si usas el daemon modificado (ver `go-daemon/main.go`), Grafana se levanta automáticamente y el generador de tráfico corre cada 60s.
+**Top 5 Contenedores RAM (Pie Chart)**:
+```sql
+SELECT name || ' (' || pid || ')', MAX(ram) FROM process_log WHERE name LIKE 'stress%' OR name = 'sleep' GROUP BY pid, name ORDER BY 2 DESC LIMIT 5;
+```
 
-### 5 Generar tráfico (contenedores de prueba)
+**Top 5 Contenedores CPU (Pie Chart)**:
+```sql
+SELECT name || ' (' || pid || ')', MAX(cpu) FROM process_log WHERE name LIKE 'stress%' OR name = 'sleep' GROUP BY pid, name ORDER BY 2 DESC LIMIT 5;
+```
 
+**RAM Usada (Stat)**:
+```sql
+SELECT used FROM ram_log ORDER BY id DESC LIMIT 1;
+```
+
+**Contenedores Activos (Time Series - Extra)**:
+```sql
+SELECT timestamp as time, count(distinct pid) FROM process_log WHERE name LIKE 'stress%' OR name = 'sleep' GROUP BY timestamp ORDER BY timestamp ASC;
+```
+
+### Dashboard B: SISTEMA (Consultas)
+
+Este dashboard muestra la visión general de todos los procesos del sistema operativo.
+
+**Total RAM (Stat)**: (Igual al anterior).
+
+**Free RAM (Stat)**: (Igual al anterior).
+
+**Total Procesos Contados (Stat)**:
+```sql
+SELECT count(distinct pid) FROM process_log WHERE timestamp = (SELECT MAX(timestamp) FROM process_log);
+```
+
+**Uso de RAM Global (Time Series)**: (Igual al anterior).
+
+**Top 5 Sistema RAM (Pie Chart)**:
+```sql
+SELECT name || ' (' || pid || ')', MAX(ram) FROM process_log GROUP BY pid, name ORDER BY 2 DESC LIMIT 5;
+```
+
+**Top 5 Sistema CPU (Pie Chart)**:
+```sql
+SELECT name || ' (' || pid || ')', MAX(cpu) FROM process_log GROUP BY pid, name ORDER BY 2 DESC LIMIT 5;
+```
+
+**RAM Usada (Stat)**: (Igual al anterior).
+
+**Carga Promedio CPU Sistema (Time Series - Extra)**:
+```sql
+SELECT timestamp as time, avg(cpu) FROM process_log GROUP BY timestamp ORDER BY timestamp ASC;
+```
+
+## 4. Solución de Problemas
+
+**Error: `insmod: ERROR: could not insert module ...: Invalid parameters`**
+
+- **Causa**: Conflicto de permisos al crear `/proc`.
+- **Solución**: Asegúrese de que el código C usa permisos `0444` (solo lectura) en `proc_create` y que no hay otro módulo cargado con el mismo nombre. Ejecute `dmesg | tail` para más detalles.
+
+**Error: Grafana no muestra datos ("No data")**
+
+- **Causa**: Permisos de archivo de base de datos o ruta incorrecta.
+- **Solución**: Verifique que `go-daemon/metrics.db` tenga permisos de lectura/escritura (`chmod 666 metrics.db`) y que el Data Source en Grafana apunte a `/var/lib/grafana/metrics.db`.
+
+**El script `generator.sh` no se ejecuta automáticamente**
+
+- **Causa**: Ruta incorrecta en el cronjob.
+- **Solución**: Revise el log del daemon. Asegúrese de ejecutar `sudo go run main.go` desde dentro de la carpeta `go-daemon` para que pueda resolver la ruta relativa `../bash/generator.sh`.
+
+## 5. Limpieza
+
+Para detener todo y limpiar el sistema:
+
+**Detener Daemon**: Presione `Ctrl + C` en la terminal donde corre Go.
+
+- Esto automáticamente elimina el Cronjob y descarga los módulos.
+
+**Limpiar Contenedores**:
 ```bash
-cd ../bash
-chmod +x generator.sh
-./generator.sh
+docker rm -f $(docker ps -aq --filter name=so1_contenedor)
+docker rm -f grafana_so1
 ```
 
-El daemon de Go detectará los contenedores creados y aplicará la lógica de eliminación si se exceden los límites definidos.
-
-Nota: el daemon también lanza `generator.sh` automáticamente cada 60s y, al terminar con `Ctrl+C`, limpia de la crontab cualquier línea que contenga `bash/generator.sh`.
-
-Archivo relacionado: `bash/generator.sh` — [ver archivo](../bash/generator.sh)
-
-
-## Carpeta Compartida Host↔VM (Virtio-FS)
-
-Este método recomendado permite montar una carpeta de tu PC dentro de la VM como si fuera otro disco. Es rápido y eficiente para uso frecuente.
-
-Pasos en el Host (Virt-Manager):
-- Abre Virtual Machine Manager (`virt-manager`).
-- Abre tu VM y haz clic en el ícono de la bombilla (Detalles de hardware).
-- Haz clic en "Añadir Hardware" → "Sistema de archivos" (Filesystem).
-- Configura:
-	- Controlador (Driver): `virtiofs` (o `virtio-fs`).
-	- Ruta fuente (Source path): carpeta en tu PC (ej. `/home/tu_usuario/Compartido`).
-	- Ruta destino (Target path): nombre identificador (ej. `micarpeta`).
-- Finaliza y enciende la VM.
-
-Pasos dentro de la VM (Linux):
-
+**Limpiar Módulos (si el daemon falló al salir)**:
 ```bash
-# Crear el punto de montaje
-sudo mkdir -p /mnt/compartido
-
-# Montar la carpeta (usa el nombre del Target path configurado)
-sudo mount -t virtiofs micarpeta /mnt/compartido
-```
-
-Opcional (montaje persistente al arranque):
-
-```bash
-echo 'micarpeta /mnt/compartido virtiofs defaults 0 0' | sudo tee -a /etc/fstab
-sudo mount -a
-```
-
-Nota: Si tu entorno no soporta `virtio-fs`, puedes usar 9p como alternativa:
-
-```bash
-sudo mount -t 9p -o trans=virtio,version=9p2000.L micarpeta /mnt/compartido
-```
-
-### Migrar el proyecto desde carpeta compartida a Home (100% Linux)
-
-Para evitar problemas de permisos y rendimiento, se recomienda copiar el proyecto desde la carpeta compartida a tu `Home` dentro de la VM y trabajar desde ahí:
-
-```bash
-# 1. Ir a tu carpeta personal (Home)
-cd ~
-
-# 2. Copiar todo el proyecto desde la carpeta compartida hacia aquí
-cp -r /mnt/compartido/proyecto-1 .
-
-# 3. Entrar a la nueva copia (que ya es 100% Linux)
-cd proyecto-1
-
+sudo rmmod sysinfo
+sudo rmmod continfo
 ```
 
 
-## Solución de Problemas
 
-- `insmod`: parámetros inválidos o falla al cargar
-	- Revise `dmesg | tail -n 50` para ver el motivo.
-	- Verifique que los encabezados del kernel estén instalados (`linux-headers-$(uname -r)`).
-	- Si los nodos `/proc` no tienen permisos correctos, recompilar; el código ya define `0444` (solo lectura).
-- Docker requiere privilegios
-	- Use `sudo` o agregue su usuario al grupo `docker` y reabra sesión.
-- No aparece `/proc/sysinfo_so1_202302220` o `/proc/continfo_so1_202302220`
-	- Confirme que los módulos estén cargados: `lsmod | grep so1`
-	- Intente recargar: `sudo rmmod procesos` y/o `sudo rmmod ram` y vuelva a hacer `insmod`.
-- Go no encuentra dependencias o no ejecuta
-	- Verifique `go version` y `which go`. Ejecute los comandos dentro de `proyecto-1/go-daemon`.
-- Grafana no muestra datos
-	- Asegure que `go-daemon/metrics.db` existe y tiene permisos `666`.
-	- Verifique que el daemon está corriendo y escribiendo en la base (`sudo env "PATH=$PATH" go run main.go`).
 
-## Limpieza
-
-```bash
-# 1. Detener generador y contenedores de prueba
-docker stop $(docker ps -q --filter name=so1_contenedor) || true
-docker rm $(docker ps -aq --filter name=so1_contenedor) || true
-
-# 2. Bajar Grafana (desde `proyecto-1/dashboard`)
-cd proyecto-1/dashboard
-docker-compose down
-
-# 3. Descargar módulos del kernel
-sudo rmmod procesos || true
-sudo rmmod ram || true
-```
-
-¡Listo! Con estos pasos, el entorno queda limpio y preparado para una nueva ejecución.
