@@ -3,10 +3,10 @@
 Para poder correr el protoc, se utilizó un contenedor para facilitar el proceso y no tener que instalar plugins complejos:
 
 ```bash
-docker run --rm -v "$(pwd):/src" -w /src golang:1.23 /bin/bash -c " \
+sudo docker run --rm -v "$(pwd):/src" -w /src golang:1.23 /bin/bash -c " \
   apt-get update && apt-get install -y protobuf-compiler && \
   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
-  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest && \
+  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1 && \
   export PATH=\$PATH:\$(go env GOPATH)/bin && \
   mkdir -p grpc-server-go/pb && \
   protoc --go_out=./grpc-server-go/pb --go_opt=paths=source_relative \
