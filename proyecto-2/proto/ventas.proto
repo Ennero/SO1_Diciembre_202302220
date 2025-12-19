@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package blackfriday;
+
+option go_package = "./proto";
+
+// 1. Mensaje con información de venta
+message ProductSaleRequest {
+    CategoriaProducto categoria = 1;
+    string producto_id = 2;
+    double precio = 3;
+    int32 cantidad_vendida = 4;
+}
+
+// 2. Lista de categorías (Enum)
+// Nota: En proto3, el primer valor de un enum DEBE ser 0.
+// Agregamos UNKNOWN=0 para cumplir la regla, y respetamos los IDs del PDF.
+enum CategoriaProducto {
+    UNKNOWN = 0;
+    ELECTRONICA = 1;
+    ROPA = 2;
+    HOGAR = 3;
+    BELLEZA = 4;
+}
+
+// 3. Respuesta del servidor
+message ProductSaleResponse {
+    string estado = 1;
+}
+
+// 4. Servicio gRPC
+service ProductSaleService {
+    rpc ProcesarVenta (ProductSaleRequest) returns (ProductSaleResponse);
+}
