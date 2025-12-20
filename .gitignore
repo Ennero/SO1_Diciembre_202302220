@@ -1,1 +1,129 @@
-proyecto-2/api-rust/target
+# ============================================
+# ARCHIVOS COMPILADOS Y BINARIOS
+# ============================================
+
+# Módulos de Kernel Linux
+*.ko
+*.o
+*.mod.c
+*.mod
+*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+
+# Binarios de Go
+go-daemon
+grpc-server-go
+
+# ============================================
+# DEPENDENCIAS Y GESTORES DE PAQUETES
+# ============================================
+
+# Go
+go.sum
+
+# Rust
+proyecto-2/api-rust/target/
+proyecto-2/api-rust/Cargo.lock
+
+# Node.js (si aplica en el futuro)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# ============================================
+# BASES DE DATOS Y ARCHIVOS DE DATOS
+# ============================================
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# LOGS Y ARCHIVOS TEMPORALES
+# ============================================
+
+# Logs
+*.log
+logs/
+
+# Archivos temporales
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================
+# IDEs Y EDITORES
+# ============================================
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim
+*.swp
+*.swo
+*.swn
+
+# ============================================
+# DOCKER Y KUBERNETES (LOCAL)
+# ============================================
+
+# Docker volumes y datos locales
+docker-compose.override.yml
+.env
+.env.local
+
+# ============================================
+# SISTEMA OPERATIVO
+# ============================================
+
+# Linux
+*~
+.directory
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ============================================
+# ARCHIVOS DE CONSTRUCCIÓN
+# ============================================
+
+# Rust
+**/*.rs.bk
+.rustc_info.json
+
+# Go
+vendor/
