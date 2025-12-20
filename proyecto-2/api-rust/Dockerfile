@@ -1,5 +1,5 @@
 # Etapa 1: Compilación
-FROM rust:1.82-slim-bookworm AS builder
+FROM rust:1.83-slim-bookworm AS builder
 WORKDIR /usr/src/proyecto
 
 # Instalar compilador de Protobuf (necesario para tonic-build)

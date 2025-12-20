@@ -22,9 +22,9 @@ struct VentaInput {
 async fn registrar_venta(item: web::Json<VentaInput>) -> impl Responder {
     // 1. Conectar al servidor gRPC (Go)
     // Nota: En un entorno real, la conexión se debería reusar, no crear por cada petición.
-    let mut client = match ProductSaleServiceClient::connect("http://[::1]:50051").await {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().body(format!("Error conectando gRPC: {}", e)),
+    let mut client = match ProductSaleServiceClient::connect("http://grpc-go-service:50051").await {
+    Ok(c) => c,
+    Err(e) => return HttpResponse::InternalServerError().body(format!("Error conectando gRPC: {}", e)),
     };
 
     // 2. Crear el mensaje gRPC
