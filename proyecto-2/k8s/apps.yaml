@@ -29,9 +29,9 @@ spec:
         ports:
         - containerPort: 50051
         env:
-        # VARIABLE NUEVA PARA ENCONTRAR A KAFKA
         - name: KAFKA_BROKER
-          value: "kafka-service:9092"
+          # CAMBIAR ESTO:
+          value: "my-cluster-kafka-bootstrap:9092"
         resources:
           requests:
             cpu: "100m"
