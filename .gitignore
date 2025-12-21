@@ -127,3 +127,6 @@ Desktop.ini
 
 # Go
 vendor/
+
+
+proyecto-2/create-valkey-image/valkey_disk.qcow2
