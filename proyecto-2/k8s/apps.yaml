@@ -1,0 +1,97 @@
+# 1. Namespace (Para tener ordenado el proyecto)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blackfriday
+---
+# ==========================================
+# COMPONENTE 1: SERVIDOR GO (Backend)
+# ==========================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpc-server-go
+  namespace: blackfriday
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: grpc-server-go
+  template:
+    metadata:
+      labels:
+        app: grpc-server-go
+    spec:
+      containers:
+      - name: grpc-server-go
+        # AHORA ES V2
+        image: <IP-EXTERNA-DE-TU-VM>:5000/grpc-server-go:v2
+        ports:
+        - containerPort: 50051
+        env:
+        # VARIABLE NUEVA PARA ENCONTRAR A KAFKA
+        - name: KAFKA_BROKER
+          value: "kafka-service:9092"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+---
+# Servicio Interno para que Rust encuentre a Go
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpc-go-service # ESTE NOMBRE COINCIDE CON TU CÓDIGO RUST
+  namespace: blackfriday
+spec:
+  selector:
+    app: grpc-server-go
+  ports:
+    - protocol: TCP
+      port: 50051
+      targetPort: 50051
+  type: ClusterIP
+---
+# ==========================================
+# COMPONENTE 2: API RUST (Frontend)
+# ==========================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-rust
+  namespace: blackfriday
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-rust
+  template:
+    metadata:
+      labels:
+        app: api-rust
+    spec:
+      containers:
+      - name: api-rust
+        # ¡OJO! AQUÍ USAMOS LA v2 QUE ACABAS DE SUBIR
+        image: <IP-EXTERNA-DE-TU-VM>:5000/api-rust:v2
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+---
+# Servicio Público para acceder desde Internet
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-rust-service
+  namespace: blackfriday
+spec:
+  selector:
+    app: api-rust
+  ports:
+    - protocol: TCP
+      port: 80       # Puerto expuesto al mundo
+      targetPort: 8080 # Puerto del contenedor
+  type: LoadBalancer # Nos dará una IP Pública
