@@ -1,4 +1,4 @@
-# 1. Namespace (Para tener ordenado el proyecto)
+# Namespace (Para tener ordenado el proyecto)
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -24,13 +24,11 @@ spec:
     spec:
       containers:
       - name: grpc-server-go
-        # AHORA ES V2
         image: <IP-EXTERNA-DE-TU-VM>:5000/grpc-server-go:v2
         ports:
         - containerPort: 50051
         env:
         - name: KAFKA_BROKER
-          # CAMBIAR ESTO:
           value: "my-cluster-kafka-bootstrap:9092"
         resources:
           requests:
@@ -41,7 +39,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: grpc-go-service # ESTE NOMBRE COINCIDE CON TU CÓDIGO RUST
+  name: grpc-go-service 
   namespace: blackfriday
 spec:
   selector:
@@ -72,7 +70,6 @@ spec:
     spec:
       containers:
       - name: api-rust
-        # ¡OJO! AQUÍ USAMOS LA v2 QUE ACABAS DE SUBIR
         image: <IP-EXTERNA-DE-TU-VM>:5000/api-rust:v2
         ports:
         - containerPort: 8080
@@ -92,6 +89,6 @@ spec:
     app: api-rust
   ports:
     - protocol: TCP
-      port: 80       # Puerto expuesto al mundo
-      targetPort: 8080 # Puerto del contenedor
+      port: 80       
+      targetPort: 8080 
   type: LoadBalancer # Nos dará una IP Pública

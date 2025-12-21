@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: blackfriday
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        env:
+        # Esto instala el conector de Redis automáticamente
+        - name: GF_INSTALL_PLUGINS
+          value: "redis-datasource"
+        # Permitir login anónimo
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+  namespace: blackfriday
+spec:
+  type: LoadBalancer  # IP Pública
+  ports:
+  - port: 80
+    targetPort: 3000
+  selector:
+    app: grafana

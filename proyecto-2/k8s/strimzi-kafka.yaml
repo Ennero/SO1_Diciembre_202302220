@@ -23,7 +23,7 @@ metadata:
     strimzi.io/kraft: enabled
 spec:
   kafka:
-    version: 4.0.0 # Si falla, cambiaremos a 3.8.0, pero Strimzi suele ser flexible hacia abajo si se configura bien.
+    version: 4.0.0 
     metadataVersion: 4.0-IV1
     listeners:
       - name: plain

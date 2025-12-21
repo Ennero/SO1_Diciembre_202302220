@@ -12,71 +12,122 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// Estructura de la venta (la misma que envía el server)
 type VentaMsg struct {
-	ProductoID string `json:"producto_id"`
+	Categoria       int     `json:"categoria"`
+	ProductoID      string  `json:"producto_id"`
+	Precio          float64 `json:"precio"`
+	CantidadVendida int     `json:"cantidad_vendida"`
+}
+
+// Mapa de IDs a Nombres
+func obtenerNombreCategoria(id int) string {
+	switch id {
+	case 1:
+		return "Electronica"
+	case 2:
+		return "Ropa"
+	case 3:
+		return "Hogar"
+	case 4:
+		return "Belleza"
+	default:
+		return "Otros"
+	}
 }
 
 func main() {
 	// --- Configuración ---
 	kafkaBroker := os.Getenv("KAFKA_BROKER")
-	kafkaTopic := "ventas"
-	kafkaGroupID := "consumidores-grupo-1"
-	redisAddr := "valkey-service:6379" // Dirección del servicio de la VM
-
 	if kafkaBroker == "" {
 		kafkaBroker = "my-cluster-kafka-bootstrap:9092"
 	}
+	redisAddr := "valkey-service:6379" // Nombre del servicio en K8s
+	fmt.Printf("Consumidor v4 Iniciado\nKafka: %s\nValkey: %s\n", kafkaBroker, redisAddr)
 
-	fmt.Printf("📥 Consumidor v2 Iniciado\nKafka: %s\nValkey VM: %s\n", kafkaBroker, redisAddr)
-
-	// --- Conexión a Kafka ---
-	// Usamos NewReader con configuración explícita para evitar perder mensajes
 	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:   []string{kafkaBroker},
-		Topic:     kafkaTopic,
-		GroupID:   kafkaGroupID,
-		MinBytes:  10e3, // 10KB
-		MaxBytes:  10e6, // 10MB
-		MaxWait:   1 * time.Second,
-		StartOffset: kafka.FirstOffset, // Importante: Leer desde el inicio si es nuevo
+		Brokers:  []string{kafkaBroker},
+		Topic:    "ventas",
+		GroupID:  "consumidores-grupo-v4",
+		MinBytes: 10e3,
+		MaxBytes: 10e6,
+		MaxWait:  1 * time.Second,
 	})
 	defer r.Close()
 
-	// --- Conexión a Valkey (Redis) ---
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: "", // Sin contraseña por defecto
-		DB:       0,  // DB por defecto
-	})
-
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr, Password: "", DB: 0})
 	ctx := context.Background()
-	fmt.Println("🎧 Escuchando ventas y guardando en VM...")
 
 	for {
 		m, err := r.ReadMessage(ctx)
 		if err != nil {
-			log.Printf("❌ Error leyendo Kafka: %v", err)
+			log.Printf("Error Kafka: %v", err)
 			break
 		}
 
-		// 1. Desempaquetar JSON
-		var venta VentaMsg
-		if err := json.Unmarshal(m.Value, &venta); err != nil {
-			log.Printf("⚠️ Error entendiendo JSON: %v", err)
+		var v VentaMsg
+		if err := json.Unmarshal(m.Value, &v); err != nil {
 			continue
 		}
 
-		// 2. Guardar en Valkey (Incrementar contador)
-		// Comando Redis: INCR "contador:Monitor-4K"
-		key := fmt.Sprintf("contador:%s", venta.ProductoID)
-		err = rdb.Incr(ctx, key).Err()
+		catNombre := obtenerNombreCategoria(v.Categoria)
 
-		if err != nil {
-			// ESTO FALLARÁ HASTA ARREGLAR LA VM (Es esperado por ahora)
-			fmt.Printf("❌ Error conectando a Valkey: %v (Venta recibida: %s)\n", err, venta.ProductoID)
-		} else {
-			fmt.Printf("💾 Guardado en DB: %s (+1)\n", venta.ProductoID)
+		// ---------------------------------------------------------
+		// 1. CÁLCULO DE PROMEDIOS (CANTIDAD Y PRECIO)
+		// ---------------------------------------------------------
+		
+		rdb.HIncrByFloat(ctx, "aux:suma_precio:"+catNombre, "total", v.Precio)
+		rdb.HIncrBy(ctx, "aux:suma_cantidad:"+catNombre, "total", int64(v.CantidadVendida))
+		rdb.HIncrBy(ctx, "aux:conteo_tx:"+catNombre, "total", 1)
+
+		// Leemos los valores actuales para calcular el promedio al vuelo
+		sumaPrecio, _ := rdb.HGet(ctx, "aux:suma_precio:"+catNombre, "total").Float64()
+		sumaCant, _ := rdb.HGet(ctx, "aux:suma_cantidad:"+catNombre, "total").Float64()
+		conteo, _ := rdb.HGet(ctx, "aux:conteo_tx:"+catNombre, "total").Float64()
+
+		if conteo > 0 {
+			promPrecio := sumaPrecio / conteo
+			promCant := sumaCant / conteo
+
+			// Guardamos los resultados finales para Grafana
+			// Fila 1: Promedio Cantidad
+			rdb.HSet(ctx, "stats:promedio_cantidad", catNombre, promCant)
+			// Fila 2: Promedio Precio
+			rdb.HSet(ctx, "stats:promedio_precio", catNombre, promPrecio)
 		}
+
+		// ---------------------------------------------------------
+		// 2. OTRAS ESTADÍSTICAS GENERALES
+		// ---------------------------------------------------------
+
+		// Total Reportes (Ventas) por Categoría
+		rdb.HIncrBy(ctx, "stats:reportes_categoria", catNombre, 1)
+
+		// Precios Máximos y Mínimos (Global)
+		memberID := fmt.Sprintf("%s-%d", v.ProductoID, time.Now().UnixNano()) // ID único
+		rdb.ZAdd(ctx, "stats:precios_global", redis.Z{Score: v.Precio, Member: memberID})
+
+		// Top Productos Más Vendidos (Global)
+		rdb.ZIncrBy(ctx, "stats:productos_top", float64(v.CantidadVendida), v.ProductoID)
+
+		// ---------------------------------------------------------
+		// 3. SECCIÓN ESPECÍFICA (ELECTRONICA - CARNET 0)
+		// ---------------------------------------------------------
+		if catNombre == "Electronica" {
+			// Top Productos (Solo Electronica)
+			rdb.ZIncrBy(ctx, "stats:electronica:productos", float64(v.CantidadVendida), v.ProductoID)
+
+			// Historial de Precios (Stream para Time Series)
+			// "stream:electronica:precio"
+			rdb.XAdd(ctx, &redis.XAddArgs{
+				Stream: "stream:electronica:precio",
+				MaxLen: 1000, // Guardar solo los últimos 1000 para no llenar la memoria
+				Values: map[string]interface{}{
+					"precio": v.Precio,
+					"producto": v.ProductoID,
+				},
+			})
+		}
+
+		fmt.Printf("Procesado: %s (Cant: %d, $%.2f) - %s\n", v.ProductoID, v.CantidadVendida, v.Precio, catNombre)
 	}
 }

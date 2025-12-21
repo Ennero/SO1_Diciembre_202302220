@@ -1,4 +1,4 @@
-# Etapa 1: Compilación
+# Compilación
 FROM golang:1.23 AS builder
 WORKDIR /app
 
@@ -6,13 +6,13 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copiar el código fuente (incluyendo la carpeta pb generada)
+# Copiar el código fuente 
 COPY . .
 
 # Compilar el binario
 RUN CGO_ENABLED=0 GOOS=linux go build -o servidor-go main.go
 
-# Etapa 2: Imagen final ligera
+# Imagen final
 FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=builder /app/servidor-go .

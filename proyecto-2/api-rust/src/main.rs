@@ -12,7 +12,7 @@ use blackfriday::{ProductSaleRequest, CategoriaProducto};
 // Estructura para recibir el JSON de Locust
 #[derive(Deserialize)]
 struct VentaInput {
-    categoria: i32, // Recibimos 1, 2, 3... igual que el enum
+    categoria: i32,
     producto_id: String,
     precio: f64,
     cantidad_vendida: i32,
@@ -21,7 +21,6 @@ struct VentaInput {
 #[post("/venta")]
 async fn registrar_venta(item: web::Json<VentaInput>) -> impl Responder {
     // 1. Conectar al servidor gRPC (Go)
-    // Nota: En un entorno real, la conexión se debería reusar, no crear por cada petición.
     let mut client = match ProductSaleServiceClient::connect("http://grpc-go-service:50051").await {
     Ok(c) => c,
     Err(e) => return HttpResponse::InternalServerError().body(format!("Error conectando gRPC: {}", e)),
@@ -47,10 +46,11 @@ async fn registrar_venta(item: web::Json<VentaInput>) -> impl Responder {
     }
 }
 
+// Función principal para iniciar el servidor Actix-web
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("🦀 API Rust escuchando en puerto 8080");
-    println!("➡️  Redirigiendo tráfico a gRPC puerto 50051");
+    println!("API Rust escuchando en puerto 8080");
+    println!(" Redirigiendo tráfico a gRPC puerto 50051");
 
     HttpServer::new(|| {
         App::new()

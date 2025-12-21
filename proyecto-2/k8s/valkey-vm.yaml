@@ -27,10 +27,9 @@ spec:
       - name: default
         pod: {}
       volumes:
-        - name: containerdisk
-          containerDisk:
-            # ¡TU IMAGEN COCINADA A MANO!
-            image: <IP-EXTERNA-DE-TU-VM>:5000/valkey-custom-disk:v1
+      - name: containerdisk
+        containerDisk:
+          image: <IP-EXTERNA-DE-TU-VM>:5000/valkey-custom-disk:v2-valkey
 ---
 apiVersion: v1
 kind: Service

@@ -1,4 +1,4 @@
-# Etapa 1: Compilación
+# Compilación
 FROM golang:1.23 as builder
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY . .
 # Compilar (CGO_ENABLED=0 para que sea estático y ligero)
 RUN CGO_ENABLED=0 GOOS=linux go build -o consumidor main.go
 
-# Etapa 2: Imagen final ligera
+# Imagen final ligera
 FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=builder /app/consumidor .

@@ -17,7 +17,6 @@ spec:
       - name: kafka-consumer
         image: <IP-EXTERNA-DE-TU-VM>:5000/kafka-consumer-go:v2
         env:
-        # Recuerda: Strimzi usa esta dirección interna
         - name: KAFKA_BROKER
           value: "my-cluster-kafka-bootstrap:9092"
         resources:

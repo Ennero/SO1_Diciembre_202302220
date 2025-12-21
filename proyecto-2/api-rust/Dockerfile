@@ -1,18 +1,18 @@
-# Etapa 1: Compilación
+# Compilación
 FROM rust:1.83-slim-bookworm AS builder
 WORKDIR /usr/src/proyecto
 
-# Instalar compilador de Protobuf (necesario para tonic-build)
+# Instalar compilador de Protobuf 
 RUN apt-get update && apt-get install -y protobuf-compiler libprotobuf-dev
 
-# Copiar todo el contexto (se enviará desde la raíz)
+# Copiar todo el contexto
 COPY . .
 
 # Moverse a la carpeta de la API y compilar
 WORKDIR /usr/src/proyecto/api-rust
 RUN cargo build --release
 
-# Etapa 2: Imagen final ligera
+# Imagen final
 FROM debian:bookworm-slim
 WORKDIR /app
 
