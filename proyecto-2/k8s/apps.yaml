@@ -78,7 +78,8 @@ spec:
             cpu: "100m"
             memory: "128Mi"
 ---
-# Servicio Público para acceder desde Internet
+
+# Servicio Interno (NGINX le enviará el tráfico aquí)
 apiVersion: v1
 kind: Service
 metadata:
@@ -91,4 +92,4 @@ spec:
     - protocol: TCP
       port: 80       
       targetPort: 8080 
-  type: LoadBalancer # Nos dará una IP Pública
+  type: ClusterIP 
