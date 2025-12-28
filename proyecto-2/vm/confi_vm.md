@@ -1,57 +1,35 @@
-# Configuración de Máquina Virtual
+# Configuración de la VM y registry (sanitizado)
 
-## Instalación de Docker en la VM
+Pasos mínimos para preparar la VM que aloja el registry Zot. Las direcciones IP se expresan como marcadores.
 
+## Instalar Docker
 ```bash
-# 1. Actualizar repositorios
 sudo apt-get update
-
-# 2. Instalar Docker
 sudo apt-get install -y docker.io
-
-# 3. Iniciar el servicio y habilitarlo
 sudo systemctl start docker
 sudo systemctl enable docker
-
-# 4. Dar permisos a tu usuario (para no usar sudo en cada comando docker)
 sudo usermod -aG docker $USER
 ```
 
-## Configurar y Ejecutar ZOT
-
+## Configurar Zot (registry privado)
 ```bash
-# 1. Crear Carpeta para ZOT
-
-mkdir -p zot-registry
-cd zot-registry
-
-# 2. Crea un archivo llamado config.json
-nano config.json
-
-```
-
-Dentro del editor de texto, se pega lo siguiente:
-
-```json
+mkdir -p zot-registry && cd zot-registry
+cat > config.json <<'EOF'
 {
   "distSpecVersion": "1.1.0",
   "storage": {
     "rootDirectory": "/var/lib/zot/data"
   },
   "http": {
-    "address": "0.0.0.0",
+    "address": "<direccion IP de escucha>",
     "port": "5000"
   },
   "log": {
     "level": "debug"
   }
 }
-```
-(Guarda con `Ctrl+O`, Enter y sal con `Ctrl+X`)
+EOF
 
-Luego se Ejecuta el contenedor Zot:
-
-```bash
 docker run -d \
   --name zot \
   -p 5000:5000 \
@@ -60,28 +38,12 @@ docker run -d \
   ghcr.io/project-zot/zot-linux-amd64:latest
 ```
 
-## Abrir Firewall de Google Cloud
-
-
-1. Ir a la consola de GCP en el navegador.
-
-2. Buscar "VPC network" (Red de VPC) -> "Firewall".
-
-3. Hacer clic en "Create Firewall Rule" (Crear regla de firewall).
-   1. Name: allow-zot-5000
-   2. Targets: All instances in the network (Todas las instancias).
-   3. Source IPv4 ranges: 0.0.0.0/0 (Esto permite acceso desde cualquier lado, útil para desarrollo).
-   4. Protocols and ports: Marca "TCP" y escribe 5000.
-
-4. Darle a Create.
-
+## Firewall (GCP)
+- Origen permitido: `<rango IP autorizado>` (evitar `<rango IP abierto>` en producción).
+- Puerto: TCP 5000.
 
 ## Probar
-
-Intentar ver el catálogo de registry usando la IP externa de la VM
-
 ```bash
-curl http://<IP-EXTERNA-DE-TU-VM>:5000/v2/_catalog
+curl http://<direccion IP del registry privado>:5000/v2/_catalog
 ```
-
-Si te devuelve algo como ``{"repositories":[]}``.
+Debe responder un JSON con los repositorios disponibles.

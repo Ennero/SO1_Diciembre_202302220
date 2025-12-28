@@ -23,8 +23,10 @@ La solución implementada sigue un patrón de microservicios con comunicación h
 - **Generador de Carga (Locust)**: Simula miles de clientes enviando transacciones JSON vía HTTP.
 
 - **Ingress Controller (NGINX) & API Gateway**: El punto de entrada al clúster se gestiona mediante un NGINX Ingress Controller. Este componente recibe el tráfico externo HTTP en la IP pública y lo enruta internamente hacia el servicio de la API de Rust.
-  - **Ingress Resource:** Define las reglas de ruteo.
-  - **API Rust:** Se expone ahora como ClusterIP (solo accesible desde dentro del clúster), mejorando la seguridad al no exponer el pod directamente a internet.
+
+- **Cliente Intermedio (Go HTTP Client):**  Servicio intermedio que recibe peticiones HTTP desde Rust, transforma los datos y se comunica vía gRPC con el Backend. Sirve como adaptador entre el mundo HTTP y el mundo gRPC.
+
+- **API Rust (Frontend):** Recibe las peticiones HTTP de Locust. Actúa como un cliente HTTP ligero que reenvía la información al siguiente servicio en la cadena (Go Client).
 
 - **Backend de Procesamiento (Go)**: Servidor gRPC que recibe datos de Rust y actúa como Productor para Kafka.
 
@@ -37,6 +39,35 @@ La solución implementada sigue un patrón de microservicios con comunicación h
 - **Visualización (Grafana)**: Dashboard conectado a Valkey para monitoreo en tiempo real.
 
 
+## SECCIÓN 2.5: EJEMPLOS DE DATOS Y PETICIONES
+
+A continuación se presentan los formatos de datos utilizados para la comunicación entre los microservicios.
+
+### Entrada (Locust -> Rust)
+
+El generador de carga envía transacciones con la siguiente estructura JSON:
+
+```json
+{
+  "categoria": 1,
+  "producto_id": "Mouse-Gamer-X",
+  "precio": 50.00,
+  "cantidad_vendida": 2
+}
+```
+
+### Transformación Interna (Rust -> Go -> Kafka)
+
+Los servicios convierten este JSON a mensajes Protobuf para su transmisión eficiente vía gRPC y posterior encolado en Kafka.
+
+
+### Almacenamiento en Valkey (Persistencia)
+
+El consumidor procesa el mensaje y genera estructuras en la base de datos, por ejemplo:
+
+Contador Global: `INCR total_ventas` -> `150`
+
+Ranking (Sorted Set): ``ZINCRBY productos_top 2 "Mouse-Gamer-X"``
 
 
 ## SECCIÓN 3: DOCUMENTACIÓN DE DEPLOYMENTS
@@ -83,7 +114,13 @@ A continuación se describen los manifiestos de Kubernetes utilizados, ubicados 
 
 **Escalado:** Mínimo 1 réplica, Máximo 5 réplicas. Esto garantiza que, durante los picos de carga generados por Locust, Kubernetes aprovisione automáticamente más pods para manejar la demanda y los elimine cuando la carga baje.
 
+### go-client.yaml 
 
+**Descripción:** Despliega el servicio intermedio programado en Go.
+
+**Función:** Expone un servidor HTTP (Fiber) en el puerto 3000 y actúa como cliente gRPC hacia el backend.
+
+**Conexión:** Define la variable de entorno GRPC_SERVER_HOST apuntando a grpc-go-service:50051.
 
 
 ## SECCIÓN 4: DESCRIPCIÓN DETALLADA DE LA IMPLEMENTACIÓN Y DESPLIEGUE
@@ -122,8 +159,8 @@ Con el archivo valkey_disk.qcow2 listo, nos movimos a la carpeta create-valkey-i
 
 ```bash
 cd create-valkey-image
-docker build -t <IP-EXTERNA-DE-TU-VM>:5000/valkey-custom-disk:v2-valkey .
-docker push <IP-EXTERNA-DE-TU-VM>:5000/valkey-custom-disk:v2-valkey
+docker build -t <direccion IP del registry privado>:5000/valkey-custom-disk:v2-valkey .
+docker push <direccion IP del registry privado>:5000/valkey-custom-disk:v2-valkey
 ```
 
 ### FASE 2: CONSTRUCCIÓN Y EMPAQUETADO (DOCKER)
@@ -147,9 +184,20 @@ Se compila el servidor web Actix y el cliente gRPC.
 
 ```bash
 cd ../api-rust
-docker build -t <IP-EXTERNA-DE-TU-VM>:5000/api-rust:v2 .
-docker push <IP-EXTERNA-DE-TU-VM>:5000/api-rust:v2
+docker build -t <direccion IP del registry privado>:5000/api-rust:v3 .
+docker push <direccion IP del registry privado>:5000/api-rust:v3
 ```
+
+#### Cliente Intermedio (Go HTTP Client)
+
+Se compila el servicio adaptador HTTP-gRPC.
+
+```bash
+cd ../go-http-client
+docker build -t <direccion IP del registry privado>:5000/go-http-client:v1 .
+docker push <direccion IP del registry privado>:5000/go-http-client:v1
+```
+
 
 #### Servidor Backend (Go gRPC)
 
@@ -157,8 +205,8 @@ Se compila el servidor que recibe peticiones y escribe en Kafka.
 
 ```bash
 cd ../grpc-server-go
-docker build -t <IP-EXTERNA-DE-TU-VM>:5000/grpc-server-go:v2 .
-docker push <IP-EXTERNA-DE-TU-VM>:5000/grpc-server-go:v2
+docker build -t <direccion IP del registry privado>:5000/grpc-server-go:v2 .
+docker push <direccion IP del registry privado>:5000/grpc-server-go:v2
 ```
 
 #### Consumidor (Go Kafka Consumer)
@@ -167,13 +215,13 @@ Se compila la última versión (v4) que incluye la lógica de promedios matemát
 
 ```bash
 cd ../kafka-consumer-go
-docker build -t <IP-EXTERNA-DE-TU-VM>:5000/kafka-consumer-go:v4 .
-docker push <IP-EXTERNA-DE-TU-VM>:5000/kafka-consumer-go:v4
+docker build -t <direccion IP del registry privado>:5000/kafka-consumer-go:v4 .
+docker push <direccion IP del registry privado>:5000/kafka-consumer-go:v4
 ```
 
 ### FASE 3: PUBLICACIÓN EN REGISTRY PRIVADO (ZOT)
 
-Kubernetes necesita descargar las imágenes desde un servidor centralizado. Se configuró un Container Registry (Zot) en una Máquina Virtual externa con la IP <IP-EXTERNA-DE-TU-VM>.
+Kubernetes necesita descargar las imágenes desde un servidor centralizado. Se configuró un Container Registry (Zot) en una Máquina Virtual externa con la IP <direccion IP del registry privado>.
 
 #### Procedimiento de Subida
 
@@ -181,7 +229,7 @@ Se etiquetaron todas las imágenes locales apuntando a esta IP y se subieron med
 
 Ejemplo:
 ```bash
-docker push <IP-EXTERNA-DE-TU-VM>:5000/api-rust:v2
+docker push <direccion IP del registry privado>:5000/api-rust:v2
 ```
 
 Esto hace que los binarios compilados y el disco virtual estén disponibles vía red para el clúster de GKE.
@@ -221,7 +269,7 @@ kubectl get pods -n blackfriday
 
 #### Descarga de Imágenes (Image Pull)
 
-Los nodos del clúster (Workers) leen la especificación de los Deployments. Al encontrar la instrucción image: <IP-EXTERNA-DE-TU-VM>:5000/..., el motor de contenedor del nodo conecta con nuestro Registry privado, descarga las capas de la imagen y arranca los contenedores.
+Los nodos del clúster (Workers) leen la especificación de los Deployments. Al encontrar la instrucción image: <direccion IP del registry privado>:5000/..., el motor de contenedor del nodo conecta con nuestro Registry privado, descarga las capas de la imagen y arranca los contenedores.
 
 #### Despliegue de la VM (KubeVirt)
 
@@ -251,6 +299,7 @@ Finalmente, levantamos la API, el Servidor gRPC, el Consumidor y Grafana.
 
 ```bash
 kubectl apply -f apps.yaml
+kubectl apply -f go-client.yaml  
 kubectl apply -f consumer.yaml
 kubectl apply -f grafana.yaml
 ```
@@ -281,7 +330,7 @@ Como el sistema está protegido por un Ingress Controller, debemos obtener la IP
 kubectl get svc -n ingress-nginx
 ```
 
-(Copiamos la EXTERNAL-IP de 'api-rust-service', ejemplo: <IP-EXTERNA-DE-TU-VM>).
+(Copiamos la EXTERNAL-IP de 'api-rust-service', ejemplo: <direccion IP publica del ingress>).
 
 #### Ejecución del Script de Ataque
 
@@ -293,7 +342,7 @@ locust -f locustfile.py
 #### Interfaz Web
 
 Abrimos un navegador en http://localhost:8089 configuramos:
-- Host: http://<IP-EXTERNA-DE-TU-VM>
+- Host: http://<direccion IP publica del ingress>
 - Usuarios: 200
 - Spawn Rate: 10
 
@@ -303,11 +352,12 @@ Y presionamos "Start Swarming".
 
 El flujo de datos en tiempo real funciona así:
 
-1. Locust (Cliente) genera miles de peticiones HTTP POST hacia la IP pública del LoadBalancer de Rust.
-2. Rust recibe el JSON, lo deserializa y lo envía síncronamente vía gRPC a Go.
-3. Go serializa el mensaje a bytes y lo inyecta asíncronamente en el tópico "ventas" de Kafka.
-4. El Consumidor (Go) monitorea el tópico. Al llegar un mensaje, lo procesa, actualiza los contadores y listas ordenadas (Sorted Sets) en Valkey.
-5. Grafana consulta periódicamente a Valkey y actualiza los gráficos visuales.
+1. **Locust** genera peticiones HTTP POST hacia el Ingress (Rust).
+2. **Rust** recibe el JSON y lo reenvía vía HTTP POST al servicio intermedio (go-http-client).
+3. **Go Client** recibe el HTTP, deserializa el mensaje y lo envía vía gRPC al Backend (grpc-server-go).
+4. **Go Server** recibe la llamada gRPC y publica el mensaje en Kafka.
+5. **Consumidor** lee de Kafka, procesa y escribe en Valkey.
+6. **Grafana** visualiza los datos.
 
 #### Monitoreo de Logs en Tiempo Real
 
@@ -350,6 +400,7 @@ kubectl apply -f k8s/kafka-topic.yaml
 kubectl apply -f k8s/valkey-vm.yaml
 # 3. Aplicaciones y Configuración de Red
 kubectl apply -f k8s/apps.yaml
+kubectl apply -f k8s/go-client.yaml
 kubectl apply -f k8s/ingress.yaml 
 kubectl apply -f k8s/hpa.yaml      
 # 4. Consumidor y Monitoreo
@@ -412,11 +463,180 @@ Al aumentar a 2 réplicas (o permitir que el HPA escalara automáticamente), el 
 El diseño "Stateless" del consumidor en Go permite un escalado lineal casi perfecto. Al haber múltiples consumidores en el mismo "Consumer Group" de Kafka, los mensajes se reparten automáticamente entre los pods, eliminando el cuello de botella y reduciendo la latencia de visualización en Grafana a tiempo casi real (<1 segundo).
 
 
-## SECCIÓN 8: CONCLUSIONES Y COMPARATIVAS
+
+
+
+## SECCION 8: Botar y Levantar Todo
+
+
+### "Botar todo" (Limpieza Total)
+
+Ejecuta este comando:
+```bash
+kubectl delete namespace blackfriday
+```
+
+* **Lo que sucederá:** La terminal se quedará "pensando" unos segundos (o hasta un minuto). Esto es normal, Kubernetes está apagando los contenedores, liberando volúmenes y matando la VM.
+
+**Verificación** (Para confirmar que ya no hay nada):
+```bash
+kubectl get all -n blackfriday
+```
+
+---
+
+### "Desplegar todo" (Reconstrucción)
+
+
+#### 1. Crear el Namespace (Espacio de trabajo):
+
+```bash
+kubectl create namespace blackfriday
+```
+
+#### 2. Infraestructura Base (Kafka):
+
+```bash
+# 1. Instalar el Operador (Si salen errores de "AlreadyExists" en CRDs, es normal, ignorarlos)
+kubectl create -f 'https://strimzi.io/install/latest?namespace=blackfriday' -n blackfriday
+
+# 2. Desplegar el Clúster de Kafka y el Tópico
+kubectl apply -f k8s/strimzi-kafka.yaml
+kubectl apply -f k8s/kafka-topic.yaml
+```
+
+**PAUSA REQUERIDA**: Esperar a que el pod de Kafka (my-cluster-pool-a-0) esté en estado Running (1/1) antes de continuar. Verificar con: ``kubectl get pods -n blackfriday``
+
+#### 3. Base de Datos (VM con Valkey):
+
+```bash
+kubectl apply -f k8s/valkey-vm.yaml
+```
+
+#### 4. Aplicaciones y Red (Rust, Go, Ingress, HPA):
+
+```bash
+kubectl apply -f k8s/apps.yaml
+kubectl apply -f k8s/ingress.yaml
+kubectl apply -f k8s/go-client.yaml
+kubectl apply -f k8s/hpa.yaml
+```
+
+#### 5. Consumidor y Monitoreo:
+
+```bash
+kubectl apply -f k8s/consumer.yaml
+kubectl apply -f k8s/grafana.yaml
+```
+
+---
+
+### "Comandos de kubectl" (Verificación)
+
+
+#### 1. Ver el estado general:
+```bash
+kubectl get pods -n blackfriday
+```
+
+#### 2. Ver KubeVirt:
+```bash
+kubectl get vmi -n blackfriday
+```
+
+#### 3. Ver los Servicios e IPs:
+```bash
+kubectl get svc -n blackfriday
+```
+
+(Muestra los puertos internos).
+
+#### 4. Ver el HPA (Autoscaling):
+```bash
+kubectl get hpa -n blackfriday
+```
+
+#### 5. Ver la IP de Entrada (Ingress):
+```bash
+kubectl get ingress -n blackfriday
+```
+
+(Muestra la dirección IP o el host por donde entrará Locust).
+
+---
+
+### "Verificar archivo del zot"
+
+### Forma A: Mostrando el manifiesto (Código Fuente)
+
+Muestra el archivo donde defines qué imagen usar.
+```bash
+cat k8s/apps.yaml | grep image
+```
+
+* **Qué verán:** Verán líneas como: `image: <direccion IP del registry privado>:5000/api-rust:v2`.
+
+### Forma B: Preguntándole a Kubernetes
+
+```bash
+kubectl describe pod -n blackfriday -l app=api-rust | grep Image:
+```
+
+
+## SECCION 9: Preparar ataque con Locust
+
+
+Ahora para estresar el sistema.
+
+### 1. Obtén la IP de entrada (Ingress):
+```bash
+kubectl get svc -n ingress-nginx
+```
+
+(Copia la EXTERNAL-IP).
+
+### 2. Ve a tu carpeta `locust` y corre el script:
+```bash
+locust -f locustfile.py
+```
+
+### 3. Abre `localhost:8089`.
+
+### 4. En el campo Host, pega la IP del Ingress.
+
+### 5. Configura 200 usuarios, Spawn Rate 10.
+
+### 6. ¡Dale a Start Swarming!
+
+---
+
+### 7: Evidencia de Logs
+
+Si quiere ver "las tripas" del sistema:
+
+```bash
+kubectl logs -n blackfriday -l app=kafka-consumer -f
+```
+
+---
+
+### 9: Evidencia de HPA
+
+Deja Locust corriendo unos 2-3 minutos. Luego muestra:
+```bash
+kubectl get hpa -n blackfriday
+```
+
+Debido a la carga sostenida, el HPA detectectará el uso de CPU y automáticamente y escalara los pods de 1 a N réplicas para manejar el tráfico sin caerse.
+
+---
+
+
+## SECCIÓN 10: CONCLUSIONES Y COMPARATIVAS
 
 ### Rendimiento API REST vs gRPC
 
-Se observó que la comunicación interna entre Rust y Go mediante gRPC es significativamente más eficiente que REST. gRPC utiliza Protocol Buffers (binario), lo que reduce el tamaño del payload y la latencia de serialización comparado con JSON, algo crítico en sistemas de alto tráfico.
+Se observó que Rust maneja eficientemente la alta concurrencia de entrada HTTP gracias a su modelo de actores, mientras que la comunicación interna entre los servicios de Go se beneficia de la baja latencia de gRPC. Esta separación de responsabilidades permitió modularizar el sistema cumpliendo estrictamente con los patrones de diseño solicitados.
 
 ### Rol de Kafka y Valkey
 

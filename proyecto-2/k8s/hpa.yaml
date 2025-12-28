@@ -10,18 +10,4 @@ spec:
     name: api-rust
   minReplicas: 1
   maxReplicas: 3
-  targetCPUUtilizationPercentage: 50
----
-apiVersion: autoscaling/v1
-kind: HorizontalPodAutoscaler
-metadata:
-  name: grpc-go-hpa
-  namespace: blackfriday
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: grpc-server-go
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 50
+  targetCPUUtilizationPercentage: 30

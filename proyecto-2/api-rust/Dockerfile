@@ -1,28 +1,26 @@
-# Compilación
 FROM rust:1.83-slim-bookworm AS builder
-WORKDIR /usr/src/proyecto
+WORKDIR /app
 
-# Instalar compilador de Protobuf 
-RUN apt-get update && apt-get install -y protobuf-compiler libprotobuf-dev
+# Instalar dependencias del sistema necesarias para compilar (SSL, pkg-config)
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
-# Copiar todo el contexto
+# Copiar el código fuente (estamos en la carpeta api-rust, así que copiamos todo a /app)
 COPY . .
 
-# Moverse a la carpeta de la API y compilar
-WORKDIR /usr/src/proyecto/api-rust
+# Compilar el binario en modo release
 RUN cargo build --release
 
-# Imagen final
 FROM debian:bookworm-slim
 WORKDIR /app
 
-# Instalar librerías mínimas (SSL/TLS)
+# Instalar certificados y librerías SSL para ejecución
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 
-# Copiar el binario compilado
-COPY --from=builder /usr/src/proyecto/api-rust/target/release/api-rust .
+# COPIAR EL BINARIO
+COPY --from=builder /app/target/release/api-rust .
 
-# Exponer puerto HTTP
+# Exponer puerto
 EXPOSE 8080
 
+# Ejecutar
 CMD ["./api-rust"]

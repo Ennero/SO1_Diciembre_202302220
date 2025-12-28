@@ -71,10 +71,7 @@ func main() {
 
 		catNombre := obtenerNombreCategoria(v.Categoria)
 
-		// ---------------------------------------------------------
-		// 1. CÁLCULO DE PROMEDIOS (CANTIDAD Y PRECIO)
-		// ---------------------------------------------------------
-		
+		// 1. CÁLCULO DE PROMEDIOS (CANTIDAD Y PRECIO)		
 		rdb.HIncrByFloat(ctx, "aux:suma_precio:"+catNombre, "total", v.Precio)
 		rdb.HIncrBy(ctx, "aux:suma_cantidad:"+catNombre, "total", int64(v.CantidadVendida))
 		rdb.HIncrBy(ctx, "aux:conteo_tx:"+catNombre, "total", 1)
@@ -95,10 +92,7 @@ func main() {
 			rdb.HSet(ctx, "stats:promedio_precio", catNombre, promPrecio)
 		}
 
-		// ---------------------------------------------------------
 		// 2. OTRAS ESTADÍSTICAS GENERALES
-		// ---------------------------------------------------------
-
 		// Total Reportes (Ventas) por Categoría
 		rdb.HIncrBy(ctx, "stats:reportes_categoria", catNombre, 1)
 
@@ -109,9 +103,7 @@ func main() {
 		// Top Productos Más Vendidos (Global)
 		rdb.ZIncrBy(ctx, "stats:productos_top", float64(v.CantidadVendida), v.ProductoID)
 
-		// ---------------------------------------------------------
 		// 3. SECCIÓN ESPECÍFICA (ELECTRONICA - CARNET 0)
-		// ---------------------------------------------------------
 		if catNombre == "Electronica" {
 			// Top Productos (Solo Electronica)
 			rdb.ZIncrBy(ctx, "stats:electronica:productos", float64(v.CantidadVendida), v.ProductoID)

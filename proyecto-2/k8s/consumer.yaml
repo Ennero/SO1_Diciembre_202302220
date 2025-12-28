@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: kafka-consumer
-        image: <IP-EXTERNA-DE-TU-VM>:5000/kafka-consumer-go:v4
+        image: <direccion IP del registry privado>:5000/kafka-consumer-go:v4
         env:
         - name: KAFKA_BROKER
           value: "my-cluster-kafka-bootstrap:9092"

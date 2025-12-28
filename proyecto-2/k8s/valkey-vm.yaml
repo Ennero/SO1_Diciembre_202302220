@@ -29,7 +29,7 @@ spec:
       volumes:
       - name: containerdisk
         containerDisk:
-          image: <IP-EXTERNA-DE-TU-VM>:5000/valkey-custom-disk:v2-valkey
+          image: <direccion IP del registry privado>:5000/valkey-custom-disk:v2-valkey
 ---
 apiVersion: v1
 kind: Service

@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
       - name: grpc-server-go
-        image: <IP-EXTERNA-DE-TU-VM>:5000/grpc-server-go:v2
+        image: <direccion IP del registry privado>:5000/grpc-server-go:v2
         ports:
         - containerPort: 50051
         env:
@@ -70,9 +70,12 @@ spec:
     spec:
       containers:
       - name: api-rust
-        image: <IP-EXTERNA-DE-TU-VM>:5000/api-rust:v2
+        image: <direccion IP del registry privado>:5000/api-rust:v3
         ports:
         - containerPort: 8080
+        env:
+        - name: BIND_ADDR
+          value: "<direccion IP de escucha>"
         resources:
           requests:
             cpu: "100m"
