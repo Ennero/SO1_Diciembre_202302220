@@ -19,6 +19,27 @@ Proyecto desarrollado en el marco del curso **Sistemas Operativos 1** de la carr
 
 ---
 
+<div align="center">
+
+# 🐧 Linux Kernel Module & Microservices Distributed Architecture (SO1)
+
+**Módulos de Kernel en C (/proc), Daemons en Go, servicios en Rust, Docker y orquestación con Kubernetes.**
+
+[![Language](https://img.shields.io/badge/Language-Go,%20C,%20Rust-blue?style=for-the-badge)](https://github.com/Ennero/SO1_Diciembre_202302220)
+[![Course](https://img.shields.io/badge/Course-Sistemas%20Operativos%201-003366?style=for-the-badge)](https://ingenieria.usac.edu.gt/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+
+</div>
+
+---
+
+
+## 📌 Contexto Académico
+
+Proyecto desarrollado en el marco del curso **Sistemas Operativos 1** de la carrera de Ingeniería en Ciencias y Sistemas en la Universidad de San Carlos de Guatemala (USAC).
+
+---
+
 
 Repositorio de proyectos prácticos para el curso de Sistemas Operativos 1.
 
@@ -134,6 +155,19 @@ locust -f locustfile.py
 
 ### 📊 Grafana
 - Despliegue y service: [proyecto-2/k8s/grafana.yaml](proyecto-2/k8s/grafana.yaml). Dashboard de referencia: [proyecto-2/grafana/grafico_ventas.json](proyecto-2/grafana/grafico_ventas.json) y guía: [proyecto-2/grafana/grafana.md](proyecto-2/grafana/grafana.md).
+
+---
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+
+---
+
+## 👨‍💻 Autor
+
+- **Enner Mendizabal** - [@Ennero](https://github.com/Ennero)  
+- *Facultad de Ingeniería, Universidad de San Carlos de Guatemala.*
 
 ---
 
