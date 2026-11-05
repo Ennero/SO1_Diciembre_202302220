@@ -15,3 +15,34 @@ ast-graph/*.pdf
 Thumbs.db
 .vscode/
 .idea/
+
+# Local configuration (commit examples, never personal values).
+.env
+.env.*
+!.env.example
+!.env.*.example
+!**/.env.example
+!**/.env.*.example
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Generated artifacts for this repository.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+db.sqlite3
+db.sqlite3-*
+*.mod
+*.smod
+cmake-build-*/
+
+# Go module manifests are source, not Fortran build artifacts.
+!go.mod
+!**/go.mod
+
+# Kernel modules must match the target kernel.
+*.ko

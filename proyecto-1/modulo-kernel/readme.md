@@ -19,8 +19,8 @@ Genera `procesos.ko` y `ram.ko` usando el `Makefile`.
 
 Archivos principales:
 
-- `procesos.c` — procfs de procesos — [ver archivo](./procesos.c)
-- `ram.c` — procfs de memoria RAM — [ver archivo](./ram.c)
+- `procesos.c` — procfs de procesos — [ver archivo](./continfo.c)
+- `ram.c` — procfs de memoria RAM — [ver archivo](./sysinfo.c)
 - `Makefile` — reglas de compilación — [ver archivo](./Makefile)
 
 ## Carga y verificación

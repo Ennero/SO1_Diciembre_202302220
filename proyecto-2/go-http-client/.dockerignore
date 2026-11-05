@@ -1,0 +1,21 @@
+
+# Local configuration and generated dependencies are supplied at runtime/build time.
+.git
+node_modules
+**/node_modules
+.env
+.env.*
+!.env.example
+!**/.env.example
+**/.env
+**/.env.*
+**/__pycache__
+**/.venv
+**/venv
+**/.angular
+**/.next
+**/coverage
+**/postgres
+**/*.pem
+!.env.example
+!**/.env.example
